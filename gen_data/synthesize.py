@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """企业微信桌面 UI 合成数据集生成器（离线，无网络）。
 
+输出布局对齐 yolo-label-tool：同一目录下 stem.jpg + stem.txt（外加 classes.txt）。
+
 示例:
   python synthesize.py --count 50 --out out \\
       --avatars assets/avatars --icons assets/icons \\
@@ -94,10 +96,8 @@ def main():
         return alt
 
     out_root = resolve(args.out)
-    img_dir = os.path.join(out_root, 'images')
-    lbl_dir = os.path.join(out_root, 'labels')
-    os.makedirs(img_dir, exist_ok=True)
-    os.makedirs(lbl_dir, exist_ok=True)
+    # 与 yolo-label-tool 一致：stem.jpg + stem.txt 同目录
+    os.makedirs(out_root, exist_ok=True)
 
     avatars = resolve(args.avatars)
     icons = resolve(args.icons)
@@ -159,8 +159,8 @@ def main():
             stem = '%s_%05d' % (preset.replace('-', '_'), i)
         else:
             stem = '%s_%05d' % (args.prefix, i)
-        img_path = os.path.join(img_dir, stem + '.' + ext)
-        lbl_path = os.path.join(lbl_dir, stem + '.txt')
+        img_path = os.path.join(out_root, stem + '.' + ext)
+        lbl_path = os.path.join(out_root, stem + '.txt')
         if ext == 'jpg':
             img.convert('RGB').save(img_path, quality=args.quality, optimize=True)
         else:
@@ -173,6 +173,77 @@ def main():
                 sc['page'], 'wide' if sc['nav_wide'] else 'narrow',
                 sc.get('preset') or preset or '-'))
 
+    # per-class label report (YOLO 框数量)
+    from collections import Counter
+    cls_counts = Counter()
+    n_images = 0
+    n_empty = 0
+    for fn in sorted(os.listdir(out_root)):
+        if not fn.endswith('.txt') or fn == 'classes.txt':
+            continue
+        # skip non-label sidecars if any
+        stem, _ = os.path.splitext(fn)
+        has_img = any(os.path.exists(os.path.join(out_root, stem + e))
+                      for e in ('.jpg', '.jpeg', '.png'))
+        if not has_img:
+            continue
+        n_images += 1
+        path = os.path.join(out_root, fn)
+        with open(path, 'r') as f:
+            lines_in = [ln.strip() for ln in f if ln.strip()]
+        if not lines_in:
+            n_empty += 1
+        for ln in lines_in:
+            parts = ln.split()
+            if not parts:
+                continue
+            try:
+                cid = int(parts[0])
+            except ValueError:
+                continue
+            cls_counts[cid] += 1
+
+    # resolve names for report (may fill later from classes.txt)
+    report_names = []
+    classes_src_early = os.path.join(base, 'classes.txt')
+    if os.path.exists(classes_src_early):
+        with open(classes_src_early, 'r') as f:
+            report_names = [ln.strip() for ln in f if ln.strip()]
+
+    total_boxes = sum(cls_counts.values())
+    report_lines = []
+    report_lines.append('Synthetic WeCom label report')
+    report_lines.append('out: %s' % out_root)
+    report_lines.append('images: %d  (empty labels: %d)' % (n_images, n_empty))
+    report_lines.append('total boxes: %d' % total_boxes)
+    report_lines.append('')
+    report_lines.append('%-4s  %-28s  %8s  %7s' % ('id', 'name', 'count', 'share'))
+    report_lines.append('-' * 52)
+    n_cls = max(len(report_names), (max(cls_counts.keys()) + 1) if cls_counts else 0)
+    for cid in range(n_cls):
+        name = report_names[cid] if cid < len(report_names) else ('class_%d' % cid)
+        c = cls_counts.get(cid, 0)
+        share = (100.0 * c / total_boxes) if total_boxes else 0.0
+        report_lines.append('%-4d  %-28s  %8d  %6.1f%%' % (cid, name, c, share))
+        # also flag missing classes
+    missing = [cid for cid in range(n_cls) if cls_counts.get(cid, 0) == 0]
+    report_lines.append('')
+    if missing:
+        report_lines.append('missing (0 boxes): %s' % ', '.join(
+            '%d:%s' % (cid, report_names[cid] if cid < len(report_names) else cid)
+            for cid in missing))
+    else:
+        report_lines.append('missing (0 boxes): none')
+
+    report_txt = '\n'.join(report_lines) + '\n'
+    report_path = os.path.join(out_root, 'label_report.txt')
+    with open(report_path, 'w') as f:
+        f.write(report_txt)
+    # console summary
+    print('')
+    print(report_txt.rstrip())
+    print('Wrote %s' % report_path)
+
     # write a tiny data yaml pointing at this out for convenience
     yaml_path = os.path.join(out_root, 'data_synth.yaml')
     classes_src = os.path.join(base, 'classes.txt')
@@ -180,16 +251,21 @@ def main():
     if os.path.exists(classes_src):
         with open(classes_src, 'r') as f:
             names_list = [ln.strip() for ln in f if ln.strip()]
+    classes_dst = os.path.join(out_root, 'classes.txt')
+    if names_list:
+        with open(classes_dst, 'w') as f:
+            f.write('\n'.join(names_list) + '\n')
+
     with open(yaml_path, 'w') as f:
-        f.write('# auto-generated; synthetic WeCom UI\n')
+        f.write('# auto-generated; synthetic WeCom UI (flat: image + sidecar .txt)\n')
         f.write('path: %s\n' % out_root)
-        f.write('train: images\n')
-        f.write('val: images\n')
+        f.write('train: .\n')
+        f.write('val: .\n')
         f.write('nc: %d\n' % len(names_list))
         f.write('names:\n')
         for i, n in enumerate(names_list):
             f.write('  %d: %s\n' % (i, n))
-    print('Done. Wrote %s' % yaml_path)
+    print('Done. Wrote %s (images+labels side-by-side)' % yaml_path)
 
 
 if __name__ == '__main__':

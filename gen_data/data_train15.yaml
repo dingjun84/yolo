@@ -1,0 +1,22 @@
+# YOLO data for 15-class WeCom UI (flat synthetic, 90/10 split)
+# Resolve relative to this yaml's directory (gen_data/).
+path: out_train15
+train: train.txt
+val: val.txt
+nc: 15
+names:
+  0: self_avatar
+  1: nav_chat_icon
+  2: nav_contacts_icon
+  3: search_bar
+  4: contact_item
+  5: message_input
+  6: send_button
+  7: conversation_item
+  8: incoming_bubble
+  9: outgoing_bubble
+  10: input_bar
+  11: single_chat
+  12: group_chat
+  13: contact_send_message
+  14: nav_groups_icon

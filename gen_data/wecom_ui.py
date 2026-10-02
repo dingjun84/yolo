@@ -45,6 +45,8 @@ C_TITLE_BG = (255, 255, 255)
 C_SEP = (230, 232, 235)               # 分割线（≈ black_a7）
 C_SELECTED_NAV = (200, 222, 247)      # 导航选中浅蓝底 ~#C8DEF7（非实心蓝）
 C_SELECTED_NAV_FG = (38, 126, 240)    # blue_btn #267EF0（选中图标/文字）
+C_NAV_ICON_GRAY = (98, 114, 138)       # 未选中导航图标 ~#62728A（非纯黑）
+C_NAV_ICON_GRAY_DARK = (160, 168, 178) # 深色主题未选中图标
 C_SELECTED_LIST = (38, 126, 240)      # blue_btn #267EF0 会话行选中实心
 C_SELECTED_LIST_TEXT = (255, 255, 255)
 C_TEXT = (30, 30, 30)
@@ -217,10 +219,12 @@ def _recolor_keep_alpha(im, rgb):
     return im
 
 
-def _load_nav_icon(icons_dir, normal, selected_blue, selected_white, size, selected):
-    """选中态：优先蓝实心 *_selected.png；否则把 *_selected_white 染成 blue_btn；再退常态。"""
+def _load_nav_icon(icons_dir, normal, selected_blue, selected_white, size, selected, dark=False):
+    """未选中：模板黑图标染成灰（深色主题更浅）；选中：蓝实心 / 白图标染 blue_btn。"""
     if not selected:
-        return _load_icon(icons_dir, normal, size)
+        im = _load_icon(icons_dir, normal, size)
+        gray = C_NAV_ICON_GRAY_DARK if dark else C_NAV_ICON_GRAY
+        return _recolor_keep_alpha(im, gray)
     blue_path = os.path.join(icons_dir, selected_blue)
     if os.path.exists(blue_path):
         return _load_icon(icons_dir, selected_blue, size)
@@ -228,7 +232,8 @@ def _load_nav_icon(icons_dir, normal, selected_blue, selected_white, size, selec
     if os.path.exists(white_path):
         im = _load_icon(icons_dir, selected_white, size)
         return _recolor_keep_alpha(im, C_SELECTED_NAV_FG)
-    return _load_icon(icons_dir, normal, size)
+    im = _load_icon(icons_dir, normal, size)
+    return _recolor_keep_alpha(im, C_SELECTED_NAV_FG)
 
 
 def _load_icon(icons_dir, name, size):
@@ -343,8 +348,8 @@ class WeComSynthesizer(object):
             page = 'chat'
             n_conv = rng.choice([8, 10, 12, 14]) if jitter else 12
             msg_mode = rng.choice(['mixed', 'dense', 'incoming']) if jitter else 'mixed'
-            chat_badge = rng.choice([1, 2, 3, 5, 9, 12, 42, 99, 120, 'dot'])
-            contacts_badge = rng.choice([None, None, 0, 1])
+            chat_badge = rng.choice([None]*12 + [1, 2, 3, 5, 9, 99, 'dot'])
+            contacts_badge = rng.choice([None]*14 + [0, 1])
             if not dark:
                 dark = False
             show_groups = False
@@ -359,8 +364,8 @@ class WeComSynthesizer(object):
             page = 'chat'
             n_conv = rng.choice([8, 10, 12, 15]) if jitter else 12
             msg_mode = rng.choice(['mixed', 'dense', 'outgoing']) if jitter else 'mixed'
-            chat_badge = rng.choice([1, 2, 3, 7, 12, 42, 99, 120])
-            contacts_badge = rng.choice([None, 0, 1])
+            chat_badge = rng.choice([None]*12 + [1, 2, 3, 5, 9, 99, 'dot'])
+            contacts_badge = rng.choice([None]*14 + [0, 1])
             if show_groups is None:
                 show_groups = True  # 宽栏默认含「分组」
             if not dark:
@@ -382,8 +387,8 @@ class WeComSynthesizer(object):
             page = 'contacts'
             n_conv = rng.choice([6, 8, 10, 12]) if jitter else 8
             msg_mode = 'empty'
-            chat_badge = rng.choice([2, 3, 5, 7, 12, 42])
-            contacts_badge = rng.choice([None, None, 0, 1])
+            chat_badge = rng.choice([None]*12 + [1, 2, 3, 5, 9, 99, 'dot'])
+            contacts_badge = rng.choice([None]*14 + [0, 1])
             # dark already set if contacts_profile_dark
         else:
             raise ValueError('unknown preset %r; choose from %s' % (preset, ', '.join(self.PRESETS)))
@@ -408,7 +413,7 @@ class WeComSynthesizer(object):
             'dark': dark,
             'preset': preset,
             'unread_rate': unread_rate,
-            'extra_nav_dots': True if page == 'chat' else False,
+            'extra_nav_dots': bool(page == 'chat' and rng.random() < 0.45),
             'show_groups': bool(show_groups) if show_groups is not None else False,
             'show_nav_groups': bool(not nav_wide),
         }
@@ -446,8 +451,8 @@ class WeComSynthesizer(object):
         msg_scroll = rng.random() < 0.4 and msg_mode in ('mixed', 'dense', 'incoming', 'outgoing')
 
         # None=无角标；0/'dot'=红点；正数=数字
-        badge = rng.choice([None, None, 0, 1, 2, 3, 5, 9, 12, 42, 88, 99, 120, 200])
-        contacts_badge = rng.choice([None, None, None, 0, 1, 2, 4])
+        badge = rng.choice([None]*12 + [0, 1, 2, 3, 5, 9, 99])
+        contacts_badge = rng.choice([None]*14 + [0, 1])
 
         list_w = int(w * rng.uniform(0.20, 0.32))
         if nav_wide:
@@ -473,7 +478,7 @@ class WeComSynthesizer(object):
             'selected_idx': 0 if n_conv > 0 else -1,
             'dark': dark,
             'unread_rate': 0.30 if page == 'chat' else 0.0,
-            'extra_nav_dots': rng.random() < 0.35,
+            'extra_nav_dots': rng.random() < 0.25,
             'show_groups': bool(nav_wide and rng.random() < 0.75),
             'show_nav_groups': bool((not nav_wide) and rng.random() < 0.85),
         }
@@ -569,14 +574,23 @@ class WeComSynthesizer(object):
             ('wb',       u'\u5de5\u4f5c\u53f0', None, None,
              'nav_workbench.png', 'nav_workbench_selected.png', 'nav_workbench_selected_white.png'),
         ]
-        # 偶发给非 chat/contacts 项挂红点（视觉多样性；无类别框）
+        # 导航红点稀疏随机：整栏通常 0～2 个有角标，避免每个 icon 都挂红点
+        # chat/contacts 的 badge 来自 scenario；其它项默认无，再按概率补极少数
+        badgeable = [1, 2, 4, 5, 6, 7]  # mail/docs/cal/todo/meet/wb
+        n_extra = 0
         if sc.get('extra_nav_dots'):
-            for j in (1, 2, 4, 5, 6):  # mail/docs/cal/todo/meet
-                if self.rng.random() < 0.22:
-                    # mutate tuple -> list then back
-                    it = list(items[j])
-                    it[3] = 0  # plain red dot
-                    items[j] = tuple(it)
+            n_extra = self.rng.choice([0, 0, 0, 1, 1, 2])  # 多数时候 0～1
+        else:
+            n_extra = self.rng.choice([0, 0, 0, 0, 1])  # 更稀
+        if n_extra:
+            picks = list(badgeable)
+            self.rng.shuffle(picks)
+            for j in picks[:n_extra]:
+                it = list(items[j])
+                if it[3] is not None:
+                    continue
+                it[3] = self.rng.choice([0, 0, 0, 1, 2, 3])  # 多为纯红点
+                items[j] = tuple(it)
 
         y = ay + av_size + 18
         # 窄栏图标略大、宽栏略小（与企微侧栏观感一致）
@@ -591,14 +605,13 @@ class WeComSynthesizer(object):
                 ix = 14
                 iy = y + (row_h - icon_sz) // 2
                 icon = _load_nav_icon(self.icons_dir, icon_normal, icon_sel_blue,
-                                     icon_sel_white, icon_sz, selected)
+                                     icon_sel_white, icon_sz, selected, dark=dark)
                 _paste_rgba(img, icon, (ix, iy))
                 tw, th = _text_size(draw, text, self.font_nav)
                 tx = ix + icon_sz + 10
                 ty = y + (row_h - th) // 2
                 tfill = C_SELECTED_NAV_FG if selected else text_c
                 draw.text((tx, ty), text, fill=tfill, font=self.font_nav)
-                box = (6, y, nav_w - 6, y + row_h)
                 if badge is not None:
                     # 宽栏：数字角标靠行尾；纯红点贴图标右上角（与截图一致）
                     if badge == 0 or badge == 'dot':
@@ -608,8 +621,11 @@ class WeComSynthesizer(object):
                         bx = nav_w - 18
                         by = y + row_h // 2
                     _draw_badge(draw, bx, by, badge, self.font_badge, fill=badge_fill)
+                # 导航类只标图标（宽窄布局一致，不含文字）
                 if cls_id is not None:
-                    labels.append((cls_id, box[0], box[1], box[2], box[3]))
+                    pad = 2
+                    labels.append((cls_id, ix - pad, iy - pad,
+                                   ix + icon_sz + pad, iy + icon_sz + pad))
                 y += row_h + 2
             else:
                 # narrow: icon above text；角标贴图标右上角（略重叠）
@@ -622,21 +638,22 @@ class WeComSynthesizer(object):
                 ix = (nav_w - icon_sz) // 2
                 iy = y + 4
                 icon = _load_nav_icon(self.icons_dir, icon_normal, icon_sel_blue,
-                                     icon_sel_white, icon_sz, selected)
+                                     icon_sel_white, icon_sz, selected, dark=dark)
                 _paste_rgba(img, icon, (ix, iy))
                 tw, th = _text_size(draw, text, self.font_sm)
                 tx = (nav_w - tw) // 2
                 ty = iy + icon_sz + 2
                 tfill = C_SELECTED_NAV_FG if selected else text_sec
                 draw.text((tx, ty), text, fill=tfill, font=self.font_sm)
-                # label box around icon+text block (badge 计入同一框)
-                box = (cx0, y, cx0 + cell_w, y + cell_h - 4)
                 if badge is not None:
                     # 中心落在图标右上角，红点/数字略压住图标边缘
                     _draw_badge(draw, ix + icon_sz - 1, iy + 1, badge, self.font_badge,
                                 fill=badge_fill)
+                # 导航类只标图标（不含下方文字）
                 if cls_id is not None:
-                    labels.append((cls_id, box[0], box[1], box[2], box[3]))
+                    pad = 2
+                    labels.append((cls_id, ix - pad, iy - pad,
+                                   ix + icon_sz + pad, iy + icon_sz + pad))
                 y += cell_h
 
         more_y = H - 48
@@ -649,7 +666,7 @@ class WeComSynthesizer(object):
                 ('advanced', '高级功能', None,
                  'nav_advanced.png', 'nav_advanced_selected.png', 'nav_advanced_selected_white.png'),
                 ('groups', '分组', CLS_NAV_GROUPS,
-                 'nav_groups.png', 'nav_groups_selected.png', 'nav_groups_selected_white.png'),
+                 'nav_convtag.png', 'nav_convtag_selected.png', 'nav_convtag_selected_white.png'),
             ]
             # 空间不够时只保留「分组」
             need = 56 * len(bot_items)
@@ -668,16 +685,17 @@ class WeComSynthesizer(object):
                     ix = (nav_w - bot_icon_sz) // 2
                     iy = y + 4
                     icon = _load_nav_icon(self.icons_dir, icon_normal, icon_sel_blue,
-                                         icon_sel_white, bot_icon_sz, selected)
+                                         icon_sel_white, bot_icon_sz, selected, dark=dark)
                     if icon is not None:
                         _paste_rgba(img, icon, (ix, iy))
                     tw, th = _text_size(draw, text, self.font_sm)
                     tx = (nav_w - tw) // 2
                     ty = iy + bot_icon_sz + 2
                     draw.text((tx, ty), text, fill=text_sec, font=self.font_sm)
-                    box = (cx0, y, cx0 + cell_w, y + cell_h - 4)
                     if cls_id is not None:
-                        labels.append((cls_id, box[0], box[1], box[2], box[3]))
+                        pad = 2
+                        labels.append((cls_id, ix - pad, iy - pad,
+                                       ix + bot_icon_sz + pad, iy + bot_icon_sz + pad))
                     y += cell_h
 
         # 宽栏「分组」标题：标签图标 + 文案，标为 nav_groups_icon
@@ -685,7 +703,10 @@ class WeComSynthesizer(object):
             y += 10
             hdr = '分组'
             hdr_icon_sz = 14
-            hdr_icon = _load_icon(self.icons_dir, 'nav_groups.png', hdr_icon_sz)
+            hdr_icon = _load_icon(self.icons_dir, 'nav_convtag.png', hdr_icon_sz)
+            if hdr_icon is not None:
+                gray = C_NAV_ICON_GRAY_DARK if dark else C_NAV_ICON_GRAY
+                hdr_icon = _recolor_keep_alpha(hdr_icon, gray)
             hx, hy = 14, y
             if hdr_icon is not None:
                 _paste_rgba(img, hdr_icon, (hx, hy))
@@ -695,6 +716,7 @@ class WeComSynthesizer(object):
             else:
                 draw.text((14, y), hdr, fill=text_sec, font=self.font_sm)
             y += 22
+            # 图标来自 export_wework_icons.py --preset grp → assets/icons/grp_*.png
             # (label, icon_file, selected_icon_or_None, maybe_unread_badge)
             group_rows = [
                 ('未读', 'grp_unread.png', None, True),
@@ -733,9 +755,18 @@ class WeComSynthesizer(object):
                 tw, th = _text_size(draw, gtext, self.font_nav)
                 tfill = C_SELECTED_NAV_FG if selected else text_c
                 draw.text((ix + icon_sz + 8, y + (row_h - th) // 2), gtext, fill=tfill, font=self.font_nav)
-                if maybe_badge and self.rng.random() < 0.75:
-                    # 企微分组未读角标多为浅灰底数字，这里仍用红点/数字多样化
-                    bc = self.rng.choice([0, 1, 2, 3, 5, 6, 8, 12])
+                # 单聊 / 群聊：只标左侧图标（与主导航策略一致）
+                if gtext == '单聊':
+                    labels.append((CLS_SINGLE_CHAT, ix - 2, iy - 2,
+                                   ix + icon_sz + 2, iy + icon_sz + 2))
+                elif gtext == '群聊':
+                    labels.append((CLS_GROUP_CHAT, ix - 2, iy - 2,
+                                   ix + icon_sz + 2, iy + icon_sz + 2))
+                # 分组行角标也稀疏：未读行 ~35%，其它行极少
+                do_badge = (maybe_badge and self.rng.random() < 0.35) or (
+                    (not maybe_badge) and self.rng.random() < 0.06)
+                if do_badge:
+                    bc = self.rng.choice([0, 0, 1, 2, 3, 5, 8])
                     _draw_badge(draw, nav_w - 18, y + row_h // 2, bc, self.font_badge,
                                 fill=badge_fill)
                 y += row_h
@@ -888,15 +919,6 @@ class WeComSynthesizer(object):
                 img.paste(crop, (int(vx0), int(vy0)), crop)
 
                 labels.append((item_cls, vx0, vy0, vx1, vy1))
-                # 单聊/群聊：头像区域（仅会话列表；可见部分裁剪）
-                if not is_contacts:
-                    type_cls = CLS_GROUP_CHAT if is_group else CLS_SINGLE_CHAT
-                    ax0 = x0 + av_x
-                    ay0 = y + av_y
-                    av_box = (ax0, ay0, ax0 + av_sz, ay0 + av_sz)
-                    av_vis = _clip_box(av_box, viewport)
-                    if av_vis:
-                        labels.append((type_cls, av_vis[0], av_vis[1], av_vis[2], av_vis[3]))
 
             y += row_h
             if y > list_bot + row_h:
