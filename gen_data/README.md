@@ -11,14 +11,17 @@
 gen_data/
   synthesize.py          # CLI 入口
   wecom_ui.py            # 布局 / 绘制 / 标签框
+  export_wework_icons.py # 从本机企微客户端 Assets.car 导出真图标（nav / grp 两套预设）
   classes.txt            # 与父目录一致的 14 类（含单聊/群聊/详情发消息）
   config.example.yaml
   requirements.txt       # pillow, pyyaml(可选)
   assets/
-    icons/               # 导航/搜索/工具栏占位图标（可替换）
+    icons/               # 渲染器实际取图的图标（已换成客户端真图）
+    icons_wecom/         # 导出参考目录：全量导出 + _pdf/ 矢量母版
+    _icons_backup_20261002/  # 替换前的占位图备份
     avatars/             # 占位头像（可替换为真实裁切）
     names.txt / messages.txt / snippets.txt
-  refs/                  # 风格参考截图（narrow_nav / wide_nav）
+  refs/                  # 风格参考截图（narrow_nav / wide_nav / group_filter_*）
   out/images/  out/labels/
 ```
 
@@ -40,9 +43,12 @@ gen_data/
 | 11 | single_chat（单聊） |
 | 12 | group_chat（群聊） |
 | 13 | contact_send_message（联系人详情「发消息」） |
+| 14 | nav_groups_icon（宽栏左下「分组」区标题图标） |
 
 会话列表行仍标 `conversation_item`(7)；头像另标 `single_chat`(11) 或 `group_chat`(12)。
 通讯录页右侧详情生成 `contact_send_message`(13)，随机深色/浅色主题。
+宽栏左下的「分组」标题图标标 `nav_groups_icon`(14)；其下 7 项筛选行（未读/@我/单聊/群聊/
+内部聊天/外部聊天/标记）**不单独出框**，只作为界面上下文。
 
 ## 依赖
 
@@ -98,16 +104,28 @@ python synthesize.py --count 50 --out out \
 `export_wework_icons.py` 只用 macOS 自带工具（`assetutil` + `sips`）把图标抠成 PNG：
 
 ```bash
-# 看映射表 + 每个资源在本机是否可用（矢量 / 位图 / pt 尺寸）
+# 看映射表 + 每个资源在本机是否可用（矢量 / 位图 / pt 尺寸 / 染色色值）
 python export_wework_icons.py --list
+python export_wework_icons.py --preset grp --list
 
 # 导出整套导航图标 + 白色版，并保留矢量母版
 python export_wework_icons.py --out assets/icons_wecom --keep-pdf --white selected
+
+# 导出「会话分组筛选」面板图标（按面板实测色自动染色）
+python export_wework_icons.py --preset grp --out assets/icons --keep-pdf --overwrite
 ```
+
+两个预设：`nav`（左侧主导航，22/20/16pt）与 `grp`（会话分组筛选面板，统一 16pt）。
+`--preset` 支持逗号多选（`--preset nav,grp`），`--names` / `--map` 会叠加在预设之上。
 
 **原理**：矢量资源的 PDF 原文在 car 里是**明文**存放的（全库 3130 个未压缩 PDF），
 所以流程是 `assetutil -n <名> -o tmp.car`（裁剪到只剩该资源）→ 按 `%PDF…%%EOF` 切片 →
-`sips` 光栅化。不需要 Xcode，不需要第三方库（只有 `--white` 需要 Pillow）。
+`sips` 光栅化。不需要 Xcode，不需要第三方库（只有 `--white` / `--tint` 需要 Pillow）。
+
+**尺寸**：默认输出资源**原生 pt 尺寸**（`*_16` → 16×16），也就是渲染器实际取图的尺寸，
+1:1 最清晰。注意 `sips` 对 PDF 只按 MediaBox 光栅化（固定 72dpi），`--size` 是光栅化**之后**
+的重采样——放大只会糊、不增加信息（`-s dpiWidth` 对 PDF 无效，实测 72/144/288 都还是 16px），
+非必要别用。
 
 **踩过的两个坑**（脚本里都已处理）：
 
@@ -121,9 +139,13 @@ python export_wework_icons.py --out assets/icons_wecom --keep-pdf --white select
 所以导出的 `nav_chat.png` 是 22×22、`nav_chat_selected.png` 是 20×20，与占位图同名可直接替换。
 要覆盖占位图：`--out assets/icons --overwrite`（只影响 nav_* 同名文件）。
 
-**选中态必须用白色版**：真实企微导航是「蓝底胶囊 + 白图标」。`nav_X_selected.png` 本身是**蓝色**
-实心图标，直接叠到蓝底上会糊成一片（这是替换真图后暴露出来的问题）。所以渲染器统一取
-`nav_X_selected_white.png`。白色版的来源有三类：
+**选中态取色**：渲染器 `_load_nav_icon()` 的优先级是
+① `nav_X_selected.png`（**蓝色实心**）→ ② `nav_X_selected_white.png`（无蓝色版时，就地把
+alpha 保留、RGB 染成 `C_SELECTED_NAV_FG`）→ ③ 退回 `nav_X.png`。
+当前企微的选中样式是「浅蓝底胶囊 + 蓝色图标」，所以走的是 ①。
+白色版仍然保留，作为「实心蓝底 + 白图标」样式的染色源与兜底。
+
+白色版的来源有三类：
 
 | 来源 | 例子 | 产物 |
 |---|---|---|
@@ -131,8 +153,38 @@ python export_wework_icons.py --out assets/icons_wecom --keep-pdf --white select
 | 客户端原生白色矢量（预设里显式列出的名额） | `main_meeting_16_white` | `nav_meeting_selected_white.png` |
 | 无专用资源 → 用同字形漂白 | `icon_todo` | `nav_todo_selected_white.png` |
 
-`make_white()` 会先看原图是否**本来就是白的**（不透明像素 RGB 全 ≥250），是则跳过不派生，
-所以不会冒出 `_white_white.png`；名字已带 `_white` 的名额则**就地**刷白。整个流程幂等，可重复跑。
+`recolor()` 是统一的染色原语（`make_white()` 是它染白色的特例）：会先看原图的不透明像素是否
+**本来就是目标色**，是则跳过不写盘，所以不会冒出 `_white_white.png` 这类重复文件；名字已带
+`_white` 的名额则**就地**刷白。整个流程幂等，可重复跑。
+
+### `grp` 预设：会话分组筛选面板
+
+宽栏左下「分组」区那 8 项，在 car 里是**同一组 16pt 矢量**：`icon_tab_<语义>_16`。
+注意这是独立的一族，与主导航的 `icon_tab_<模块>_normal|selected|expand_*` 不是一回事。
+
+| 面板项 | 资源名 | rendition |
+|---|---|---|
+| 未读 | `icon_tab_unread_16` | `icon_tab_unread_16.pdf` |
+| @我 | `icon_tab_atme_16` | `icon_tab_atme_16.pdf` |
+| 单聊 | `icon_tab_singleconv_16` | `icon_tab_singleconv_16.pdf` |
+| 群聊 | `icon_tab_groupconv_16` | `icon_tab_groupconv_16.pdf` |
+| 内部聊天 | `icon_tab_innerconv_16` | `icon_tab_innerconv_16.pdf` |
+| 外部聊天 | `icon_tab_externalconv_16` | `icon_tab_externalconv_16.pdf` |
+| 标记 | `icon_tab_star_16` | `icon_tab_star_16.pdf` |
+| 我的企业 | `icon_corp_switch_expand_normal` | `company_fill_16.pdf` |
+
+同族里还有 `icon_tab_tag_16`（标签）、`icon_tab_summarize_fill_16`（智能总结）备用。
+
+**必须染色**：这些矢量是 Template（fill 为**纯黑**），真实颜色由客户端运行时染上去，
+直接用就是黑图标。实测面板取值（`grp` 预设已内置，`--tint auto` 生效）：
+
+| 用途 | 色值 | 说明 |
+|---|---|---|
+| 描边图标（7 项） | `#62728A` | 预设默认色 |
+| 我的企业（实心块） | `#7B8A9D` | 该名额单独指定，比描边色浅 |
+| 单聊 选中 | `#267EF0` | 即官方 `blue_btn` |
+
+要换别的色：`--tint '#RRGGBB'` 强制覆盖全部，或 `--tint none` 输出原始黑矢量。
 
 **位图资源的限制**：少数图标在 car 里只有 lzfse 压缩位图（没有明文 PDF），本脚本会跳过并列出
 它可用的 rendition。已知的有 `icon_tab_document_*`（文档 tab）、`icon_tab_voipmt_*`（会议）、
@@ -146,7 +198,9 @@ python export_wework_icons.py --out assets/icons_wecom --keep-pdf --white select
 | 更多「⋯」 | — | `icon_more_22` → `more_22.pdf`（注意：`icon_expand_more` 是折叠箭头，不是更多） |
 
 **注意**：图标是微信官方版权素材，仅限自用/内部（例如合成训练数据），不要对外分发。
-占位图的备份在 `assets/_icons_backup_20261002/`（11 个 `nav_*.png`），要回滚直接拷回 `assets/icons/`。
+`assets/_icons_backup_20261002/` 是替换前的备份（11 个 `nav_*.png` + 8 个 `grp_*.png`），
+要回滚直接拷回 `assets/icons/`。矢量母版统一放在 `assets/icons_wecom/_pdf/`，
+部署目录 `assets/icons/` 只留渲染器真正要用的 PNG。
 
 ## 希望你在真实截图上标出的区域（校准用）
 
