@@ -12,3 +12,4 @@ input_bar
 single_chat
 group_chat
 contact_send_message
+nav_groups_icon

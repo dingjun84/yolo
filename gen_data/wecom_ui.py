@@ -30,6 +30,7 @@ CLS_INPUT_BAR = 10
 CLS_SINGLE_CHAT = 11  # 单聊
 CLS_GROUP_CHAT = 12  # 群聊
 CLS_CONTACT_SEND_MESSAGE = 13  # 联系人详情「发消息」
+CLS_NAV_GROUPS = 14  # 导航「分组」图标
 
 # ---------------------------------------------------------------------------
 # 配色（对齐官方「应用深色模式色值表」+ 桌面截图校准）
@@ -72,6 +73,13 @@ C_DARK_TEXT_SEC = (150, 155, 165)
 C_DARK_BADGE = (255, 89, 98)          # #FF5962
 C_DARK_NAV_BG = (0, 0, 0)
 C_DARK_SELECTED_NAV = (40, 48, 60)
+C_DARK_LIST_BG = (28, 29, 30)         # 会话/通讯录列表
+C_DARK_CHAT_BG = (25, 26, 27)         # 聊天区
+C_DARK_TITLE_BG = (34, 35, 36)        # 标题栏 / 输入区
+C_DARK_SEARCH_BG = (45, 46, 48)
+C_DARK_SEP = (55, 58, 64)
+C_DARK_INPUT = (34, 35, 36)
+C_WECHAT_GREEN = (7, 193, 96)         # @微信
 
 
 def _load_font(size):
@@ -299,6 +307,8 @@ class WeComSynthesizer(object):
     PRESETS = (
         'chat_narrow',
         'chat_wide',
+        'chat_wide_groups',
+        'chat_dark',
         'contacts_profile',
         'contacts_profile_dark',
     )
@@ -310,9 +320,17 @@ class WeComSynthesizer(object):
         if name == 'contacts_profile_light':
             name = 'contacts_profile'
         dark = False
+        show_groups = None  # None=宽栏默认画分组；False=强制不画；True=强制画
         if name == 'contacts_profile_dark':
             name = 'contacts_profile'
             dark = True
+        if name == 'chat_dark':
+            # 窄/宽随机的深色聊天
+            name = 'chat_narrow' if (rng.random() < 0.45 if jitter else False) else 'chat_wide'
+            dark = True
+        if name == 'chat_wide_groups':
+            name = 'chat_wide'
+            show_groups = True
 
         if name == 'chat_narrow':
             w, h = 1100, 700
@@ -327,7 +345,9 @@ class WeComSynthesizer(object):
             msg_mode = rng.choice(['mixed', 'dense', 'incoming']) if jitter else 'mixed'
             chat_badge = rng.choice([1, 2, 3, 5, 9, 12, 42, 99, 120, 'dot'])
             contacts_badge = rng.choice([None, None, 0, 1])
-            dark = False
+            if not dark:
+                dark = False
+            show_groups = False
         elif name == 'chat_wide':
             w, h = 1200, 800
             if jitter:
@@ -341,7 +361,10 @@ class WeComSynthesizer(object):
             msg_mode = rng.choice(['mixed', 'dense', 'outgoing']) if jitter else 'mixed'
             chat_badge = rng.choice([1, 2, 3, 7, 12, 42, 99, 120])
             contacts_badge = rng.choice([None, 0, 1])
-            dark = False
+            if show_groups is None:
+                show_groups = True  # 宽栏默认含「分组」
+            if not dark:
+                dark = False
         elif name == 'contacts_profile':
             w, h = 1100, 720
             if jitter:
@@ -350,8 +373,11 @@ class WeComSynthesizer(object):
             nav_wide = rng.random() < 0.55 if jitter else True
             if nav_wide:
                 nav_w = rng.randint(150, 175) if jitter else 160
+                if show_groups is None:
+                    show_groups = True
             else:
                 nav_w = rng.randint(56, 64) if jitter else 60
+                show_groups = False
             list_w = int(w * (rng.uniform(0.20, 0.28) if jitter else 0.24))
             page = 'contacts'
             n_conv = rng.choice([6, 8, 10, 12]) if jitter else 8
@@ -383,6 +409,8 @@ class WeComSynthesizer(object):
             'preset': preset,
             'unread_rate': unread_rate,
             'extra_nav_dots': True if page == 'chat' else False,
+            'show_groups': bool(show_groups) if show_groups is not None else False,
+            'show_nav_groups': bool(not nav_wide),
         }
 
     def sample_scenario(self, preset=None):
@@ -446,12 +474,15 @@ class WeComSynthesizer(object):
             'dark': dark,
             'unread_rate': 0.30 if page == 'chat' else 0.0,
             'extra_nav_dots': rng.random() < 0.35,
+            'show_groups': bool(nav_wide and rng.random() < 0.75),
+            'show_nav_groups': bool((not nav_wide) and rng.random() < 0.85),
         }
 
     def render(self, scenario=None, preset=None):
         sc = scenario or self.sample_scenario(preset=preset)
         W, H = sc['w'], sc['h']
-        img = Image.new('RGB', (W, H), C_WIN_BG)
+        win_bg = C_DARK_BG if sc.get('dark') else C_WIN_BG
+        img = Image.new('RGB', (W, H), win_bg)
         draw = ImageDraw.Draw(img)
         labels = []  # (cls, x0,y0,x1,y1) absolute
 
@@ -476,7 +507,8 @@ class WeComSynthesizer(object):
             self._draw_chat(img, draw, labels, sc)
 
         # 窗口细边框
-        draw.rectangle([0, 0, W - 1, H - 1], outline=(200, 205, 210))
+        border_c = (70, 72, 78) if sc.get('dark') else (200, 205, 210)
+        draw.rectangle([0, 0, W - 1, H - 1], outline=border_c)
 
         yolo_lines = []
         for cls, x0, y0, x1, y1 in labels:
@@ -493,7 +525,13 @@ class WeComSynthesizer(object):
         W, H = sc['w'], sc['h']
         nav_w = sc['nav_w']
         wide = sc['nav_wide']
-        draw.rectangle([0, 0, nav_w, H], fill=C_NAV_BG)
+        dark = sc.get('dark', False)
+        nav_bg = C_DARK_NAV_BG if dark else C_NAV_BG
+        text_c = C_DARK_TEXT if dark else C_TEXT
+        text_sec = C_DARK_TEXT_SEC if dark else C_TEXT_SEC
+        sel_nav = C_DARK_SELECTED_NAV if dark else C_SELECTED_NAV
+        badge_fill = C_DARK_BADGE if dark else C_BADGE
+        draw.rectangle([0, 0, nav_w, H], fill=nav_bg)
 
         # self avatar
         pad = 10 if wide else 8
@@ -506,7 +544,7 @@ class WeComSynthesizer(object):
 
         if wide:
             name = _truncate(draw, self.rng.choice(self.names), self.font_md, nav_w - ax - av_size - 16)
-            draw.text((ax + av_size + 8, ay + 8), name, fill=C_TEXT, font=self.font_md)
+            draw.text((ax + av_size + 8, ay + 8), name, fill=text_c, font=self.font_md)
 
         # nav items: (key, 文案, 类别 id, 角标, 常态图标, 选中图标)
         # 选中态：浅蓝底 + 蓝实心 *_selected.png（截图校准；白图标仅作缺省染色源）。
@@ -541,15 +579,15 @@ class WeComSynthesizer(object):
                     items[j] = tuple(it)
 
         y = ay + av_size + 18
-        icon_sz = 22 if wide else 24
-        badge_fill = C_BADGE
+        # 窄栏图标略大、宽栏略小（与企微侧栏观感一致）
+        icon_sz = 20 if wide else 26
 
         for key, text, cls_id, badge, icon_normal, icon_sel_blue, icon_sel_white in items:
             selected = (sc['page'] == key)
             if wide:
                 row_h = 40
                 if selected:
-                    draw.rounded_rectangle([6, y, nav_w - 6, y + row_h], radius=6, fill=C_SELECTED_NAV)
+                    draw.rounded_rectangle([6, y, nav_w - 6, y + row_h], radius=6, fill=sel_nav)
                 ix = 14
                 iy = y + (row_h - icon_sz) // 2
                 icon = _load_nav_icon(self.icons_dir, icon_normal, icon_sel_blue,
@@ -558,7 +596,7 @@ class WeComSynthesizer(object):
                 tw, th = _text_size(draw, text, self.font_nav)
                 tx = ix + icon_sz + 10
                 ty = y + (row_h - th) // 2
-                tfill = C_SELECTED_NAV_FG if selected else C_TEXT
+                tfill = C_SELECTED_NAV_FG if selected else text_c
                 draw.text((tx, ty), text, fill=tfill, font=self.font_nav)
                 box = (6, y, nav_w - 6, y + row_h)
                 if badge is not None:
@@ -575,12 +613,12 @@ class WeComSynthesizer(object):
                 y += row_h + 2
             else:
                 # narrow: icon above text；角标贴图标右上角（略重叠）
-                cell_h = 52
+                cell_h = 56
                 cell_w = nav_w - 4
                 cx0 = 2
                 if selected:
                     draw.rounded_rectangle([cx0, y, cx0 + cell_w, y + cell_h - 4],
-                                          radius=6, fill=C_SELECTED_NAV)
+                                          radius=6, fill=sel_nav)
                 ix = (nav_w - icon_sz) // 2
                 iy = y + 4
                 icon = _load_nav_icon(self.icons_dir, icon_normal, icon_sel_blue,
@@ -589,7 +627,7 @@ class WeComSynthesizer(object):
                 tw, th = _text_size(draw, text, self.font_sm)
                 tx = (nav_w - tw) // 2
                 ty = iy + icon_sz + 2
-                tfill = C_SELECTED_NAV_FG if selected else C_TEXT_SEC
+                tfill = C_SELECTED_NAV_FG if selected else text_sec
                 draw.text((tx, ty), text, fill=tfill, font=self.font_sm)
                 # label box around icon+text block (badge 计入同一框)
                 box = (cx0, y, cx0 + cell_w, y + cell_h - 4)
@@ -601,6 +639,120 @@ class WeComSynthesizer(object):
                     labels.append((cls_id, box[0], box[1], box[2], box[3]))
                 y += cell_h
 
+        more_y = H - 48
+        # 窄栏底部次级入口：微盘 / 高级功能 / 分组（分组 = CLS_NAV_GROUPS）
+        if (not wide) and sc.get('show_nav_groups', True):
+            # 主项过长时仍尽量挤出「分组」
+            bot_items = [
+                ('wedrive', '微盘', None,
+                 'nav_wedrive.png', 'nav_wedrive_selected.png', 'nav_wedrive_selected_white.png'),
+                ('advanced', '高级功能', None,
+                 'nav_advanced.png', 'nav_advanced_selected.png', 'nav_advanced_selected_white.png'),
+                ('groups', '分组', CLS_NAV_GROUPS,
+                 'nav_groups.png', 'nav_groups_selected.png', 'nav_groups_selected_white.png'),
+            ]
+            # 空间不够时只保留「分组」
+            need = 56 * len(bot_items)
+            if y + need >= more_y:
+                bot_items = [bot_items[-1]]
+            if y + 50 < more_y:
+                y += 6
+                bot_icon_sz = 22
+                for key, text, cls_id, icon_normal, icon_sel_blue, icon_sel_white in bot_items:
+                    if y + 50 >= more_y:
+                        break
+                    cell_h = 52
+                    cell_w = nav_w - 4
+                    cx0 = 2
+                    selected = False
+                    ix = (nav_w - bot_icon_sz) // 2
+                    iy = y + 4
+                    icon = _load_nav_icon(self.icons_dir, icon_normal, icon_sel_blue,
+                                         icon_sel_white, bot_icon_sz, selected)
+                    if icon is not None:
+                        _paste_rgba(img, icon, (ix, iy))
+                    tw, th = _text_size(draw, text, self.font_sm)
+                    tx = (nav_w - tw) // 2
+                    ty = iy + bot_icon_sz + 2
+                    draw.text((tx, ty), text, fill=text_sec, font=self.font_sm)
+                    box = (cx0, y, cx0 + cell_w, y + cell_h - 4)
+                    if cls_id is not None:
+                        labels.append((cls_id, box[0], box[1], box[2], box[3]))
+                    y += cell_h
+
+        # 宽栏「分组」标题：标签图标 + 文案，标为 nav_groups_icon
+        if wide and sc.get('show_groups', False) and y + 110 < more_y:
+            y += 10
+            hdr = '分组'
+            hdr_icon_sz = 14
+            hdr_icon = _load_icon(self.icons_dir, 'nav_groups.png', hdr_icon_sz)
+            hx, hy = 14, y
+            if hdr_icon is not None:
+                _paste_rgba(img, hdr_icon, (hx, hy))
+                draw.text((hx + hdr_icon_sz + 6, hy + 1), hdr, fill=text_sec, font=self.font_sm)
+                labels.append((CLS_NAV_GROUPS, hx - 2, hy - 2,
+                               hx + hdr_icon_sz + 2, hy + hdr_icon_sz + 2))
+            else:
+                draw.text((14, y), hdr, fill=text_sec, font=self.font_sm)
+            y += 22
+            # (label, icon_file, selected_icon_or_None, maybe_unread_badge)
+            group_rows = [
+                ('未读', 'grp_unread.png', None, True),
+                ('@我', 'grp_atme.png', None, False),
+                ('单聊', 'grp_single.png', 'grp_single_selected.png', False),
+                ('群聊', 'grp_group.png', None, False),
+                ('内部聊天', 'grp_internal.png', None, False),
+                ('外部聊天', 'grp_external.png', None, False),
+                ('标记', 'grp_star.png', None, False),
+            ]
+            # 随机高亮其中一项（常见为单聊/群聊）
+            sel_idx = self.rng.choice([2, 2, 3, None, None])
+            icon_sz = 16
+            for gi, (gtext, icon_fn, icon_sel, maybe_badge) in enumerate(group_rows):
+                if y + 30 >= more_y:
+                    break
+                row_h = 30
+                selected = (sel_idx is not None and gi == sel_idx)
+                if selected:
+                    try:
+                        draw.rounded_rectangle([6, y, nav_w - 6, y + row_h], radius=6,
+                                               fill=C_SELECTED_NAV)
+                    except AttributeError:
+                        draw.rectangle([6, y, nav_w - 6, y + row_h], fill=C_SELECTED_NAV)
+                ix, iy = 14, y + (row_h - icon_sz) // 2
+                use = icon_sel if (selected and icon_sel) else icon_fn
+                icon = _load_icon(self.icons_dir, use, icon_sz)
+                if icon is not None:
+                    _paste_rgba(img, icon, (ix, iy))
+                else:
+                    try:
+                        draw.rounded_rectangle([ix, iy, ix + icon_sz, iy + icon_sz], radius=2,
+                                               outline=text_sec)
+                    except AttributeError:
+                        draw.rectangle([ix, iy, ix + icon_sz, iy + icon_sz], outline=text_sec)
+                tw, th = _text_size(draw, gtext, self.font_nav)
+                tfill = C_SELECTED_NAV_FG if selected else text_c
+                draw.text((ix + icon_sz + 8, y + (row_h - th) // 2), gtext, fill=tfill, font=self.font_nav)
+                if maybe_badge and self.rng.random() < 0.75:
+                    # 企微分组未读角标多为浅灰底数字，这里仍用红点/数字多样化
+                    bc = self.rng.choice([0, 1, 2, 3, 5, 6, 8, 12])
+                    _draw_badge(draw, nav_w - 18, y + row_h // 2, bc, self.font_badge,
+                                fill=badge_fill)
+                y += row_h
+
+            # 参考截图：7 项之后隔一段，单独一项「我的企业」（实心块图标，比上面偏浅）
+            if y + 34 < more_y:
+                y += 12
+                row_h = 30
+                ix, iy = 14, y + (row_h - icon_sz) // 2
+                corp_icon = _load_icon(self.icons_dir, 'grp_corp.png', icon_sz)
+                if corp_icon is not None:
+                    _paste_rgba(img, corp_icon, (ix, iy))
+                tw, th = _text_size(draw, u'\u6211\u7684\u4f01\u4e1a', self.font_nav)
+                draw.text((ix + icon_sz + 8, y + (row_h - th) // 2), u'\u6211\u7684\u4f01\u4e1a',
+                          fill=text_c, font=self.font_nav)
+                y += row_h
+
         # bottom more
         more = _load_icon(self.icons_dir, 'nav_more.png', 20)
         _paste_rgba(img, more, ((nav_w - 20) // 2, H - 40))
@@ -611,9 +763,16 @@ class WeComSynthesizer(object):
         nav_w = sc['nav_w']
         list_w = sc['list_w']
         x0 = nav_w
-        draw.rectangle([x0, 0, x0 + list_w, H], fill=C_LIST_BG)
+        dark = sc.get('dark', False)
+        list_bg = C_DARK_LIST_BG if dark else C_LIST_BG
+        sep_c = C_DARK_SEP if dark else C_SEP
+        search_bg = C_DARK_SEARCH_BG if dark else C_SEARCH_BG
+        placeholder = C_DARK_TEXT_SEC if dark else C_TEXT_PLACEHOLDER
+        name_c = C_DARK_TEXT if dark else C_TEXT
+        snip_c = C_DARK_TEXT_SEC if dark else C_TEXT_SEC
+        draw.rectangle([x0, 0, x0 + list_w, H], fill=list_bg)
         # right separator
-        draw.line([(x0 + list_w - 1, 0), (x0 + list_w - 1, H)], fill=C_SEP)
+        draw.line([(x0 + list_w - 1, 0), (x0 + list_w - 1, H)], fill=sep_c)
 
         # search bar row（截图约 32–34px 高、圆角胶囊）
         search_h = 32
@@ -623,11 +782,11 @@ class WeComSynthesizer(object):
         sx = x0 + pad
         sw = list_w - pad * 2 - plus_sz - 8
         sh = search_h
-        draw.rounded_rectangle([sx, sy, sx + sw, sy + sh], radius=6, fill=C_SEARCH_BG)
+        draw.rounded_rectangle([sx, sy, sx + sw, sy + sh], radius=6, fill=search_bg)
         # search icon + placeholder
         sicon = _load_icon(self.icons_dir, 'search.png', 16)
         _paste_rgba(img, sicon, (sx + 8, sy + (sh - 16) // 2))
-        draw.text((sx + 28, sy + (sh - 13) // 2), u'\u641c\u7d22', fill=C_TEXT_PLACEHOLDER, font=self.font_md)
+        draw.text((sx + 28, sy + (sh - 13) // 2), u'\u641c\u7d22', fill=placeholder, font=self.font_md)
         labels.append((CLS_SEARCH_BAR, sx, sy, sx + sw, sy + sh))
 
         # plus button (not a labeled class)
@@ -642,7 +801,8 @@ class WeComSynthesizer(object):
         viewport = (x0, list_top, x0 + list_w, list_bot)
 
         n = sc['n_conv']
-        row_h = 62
+        # 中间栏每行固定高度（滚动只裁可见部分，不改行高）
+        row_h = 64
         # scroll offset: partially clip top/bottom
         if sc['list_scroll'] and n > 0:
             # negative offset -> first item partially above viewport
@@ -685,8 +845,8 @@ class WeComSynthesizer(object):
 
                 name = self.rng.choice(self.names)
                 name_font = self.font_nm
-                name_fill = C_SELECTED_LIST_TEXT if selected else C_TEXT
-                snip_fill = (220, 230, 245) if selected else C_TEXT_SEC
+                name_fill = C_SELECTED_LIST_TEXT if selected else name_c
+                snip_fill = (220, 230, 245) if selected else snip_c
                 time_fill = snip_fill
 
                 name_x = 12 + av_sz + 10
@@ -715,9 +875,11 @@ class WeComSynthesizer(object):
                     if sub:
                         rd.text((name_x, 36), sub, fill=snip_fill, font=self.font_sm)
 
-                # separator
+                # separator：头像下也画；左右与中间栏边框留空隙（不贴边）
                 if not selected:
-                    rd.line([(12 + av_sz + 10, row_h - 1), (list_w, row_h - 1)], fill=C_SEP + (255,))
+                    sep_inset = 12
+                    rd.line([(sep_inset, row_h - 1), (list_w - sep_inset, row_h - 1)],
+                            fill=sep_c + (255,))
 
                 # paste only the visible part of the row
                 src_y0 = max(0, int(vy0 - y))
@@ -743,7 +905,7 @@ class WeComSynthesizer(object):
     # -------------------------------------------------------- contact profile
     def _draw_contact_profile(self, img, draw, labels, sc):
         """通讯录/客户详情右侧：类 13「发消息」。
-        窄窗：发消息 + 语音通话；宽窗：发消息 + 写邮件 + 语音通话，发消息随栏宽拉长。
+        按钮等宽居中簇：大侧边距 + 等宽 3 钮（窄栏 2 钮），不贴窗边。
         """
         W, H = sc['w'], sc['h']
         x0 = sc['nav_w'] + sc['list_w']
@@ -752,6 +914,7 @@ class WeComSynthesizer(object):
         bg = C_DARK_BG if dark else (248, 248, 250)
         text_c = C_DARK_TEXT if dark else C_TEXT
         sec_c = C_DARK_TEXT_SEC if dark else C_TEXT_SEC
+        sep_c = C_DARK_SEP if dark else C_SEP
         draw.rectangle([x0, 0, W, H], fill=bg)
 
         head_h = int(H * 0.22)
@@ -766,59 +929,70 @@ class WeComSynthesizer(object):
         _paste_rgba(img, av, (ax, ay))
 
         draw.text((x0 + 24, 28), name, fill=text_c, font=self.font_title)
-        draw.text((x0 + 24, 56), '@微信', fill=(7, 193, 96), font=self.font_sm)
+        draw.text((x0 + 24, 56), '@微信', fill=C_WECHAT_GREEN, font=self.font_sm)
 
         y = head_h + 16
-        rows = [
-            ('备注', '设置备注和描述'),
-            ('标签', '设置标签'),
-            ('企业', self.rng.choice(['腾讯 - 企业微信', '外部联系人', '深圳好凶火科技有限公司', ''])),
-            ('来源', self.rng.choice(['通过微信好友添加', '从群聊添加', '从手机号码添加'])),
-        ]
-        if self.rng.random() < 0.5:
-            rows.insert(2, ('添加时间', '2026年9月29日 16:04'))
-        for label, val in rows:
+        # 信息行：贴近真实企微「备注和标签 / 实名 / 企业名片 / 更多信息」
+        if self.rng.random() < 0.65:
+            info_rows = [
+                (u'\u5907\u6ce8\u548c\u6807\u7b7e', self.rng.choice([u'\u8bbe\u7f6e\u5907\u6ce8\u548c\u63cf\u8ff0', u''])),
+                (u'\u5b9e\u540d', self.rng.choice([u'\u5df2\u5b9e\u540d', u'\u672a\u5b9e\u540d', ''])),
+                (u'\u4f01\u4e1a\u540d\u7247', self.rng.choice([u'\u817e\u8baf - \u4f01\u4e1a\u5fae\u4fe1', u'\u5916\u90e8\u8054\u7cfb\u4eba', ''])),
+                (u'\u66f4\u591a\u4fe1\u606f', ''),
+            ]
+            use_chevron = True
+        else:
+            info_rows = [
+                (u'\u5907\u6ce8', u'\u8bbe\u7f6e\u5907\u6ce8\u548c\u63cf\u8ff0'),
+                (u'\u6807\u7b7e', u'\u8bbe\u7f6e\u6807\u7b7e'),
+                (u'\u4f01\u4e1a', self.rng.choice([u'\u817e\u8baf - \u4f01\u4e1a\u5fae\u4fe1', u'\u5916\u90e8\u8054\u7cfb\u4eba', u'\u6df1\u5733\u597d\u51f6\u706b\u79d1\u6280\u6709\u9650\u516c\u53f8', ''])),
+                (u'\u6765\u6e90', self.rng.choice([u'\u901a\u8fc7\u5fae\u4fe1\u597d\u53cb\u6dfb\u52a0', u'\u4ece\u7fa4\u804a\u6dfb\u52a0', u'\u4ece\u624b\u673a\u53f7\u7801\u6dfb\u52a0'])),
+            ]
+            use_chevron = False
+            if self.rng.random() < 0.5:
+                info_rows.insert(2, (u'\u6dfb\u52a0\u65f6\u95f4', u'2026\u5e749\u670829\u65e5 16:04'))
+
+        for label, val in info_rows:
             draw.text((x0 + 24, y), label, fill=sec_c, font=self.font_sm)
             if val:
-                draw.text((x0 + 100, y), val, fill=text_c, font=self.font_nm)
-            y += 32
-            draw.line([(x0 + 24, y - 8), (W - 24, y - 8)],
-                      fill=C_SEP if not dark else (60, 64, 70))
+                # value toward the right for chevron style; left-aligned for legacy
+                if use_chevron:
+                    vw, _ = _text_size(draw, val, self.font_nm)
+                    draw.text((W - 40 - vw, y), val, fill=text_c, font=self.font_nm)
+                else:
+                    draw.text((x0 + 100, y), val, fill=text_c, font=self.font_nm)
+            if use_chevron:
+                chev = u'>'
+                cw, ch = _text_size(draw, chev, self.font_nm)
+                draw.text((W - 24 - cw, y), chev, fill=sec_c, font=self.font_nm)
+            y += 36
+            draw.line([(x0 + 24, y - 10), (W - 24, y - 10)], fill=sep_c)
 
-        # --- action buttons: width follows pane ---
-        margin = 24
-        gap = 10
+        # --- action buttons: equal-width centered cluster ---
+        side_pad = int(self.rng.uniform(0.18, 0.28) * pane_w)
+        gap = int(self.rng.uniform(8, 14))
         btn_h = int(self.rng.uniform(36, 44))
-        btn_y = H - btn_h - int(self.rng.uniform(16, 28))
-        avail = pane_w - 2 * margin
-        # 宽栏 ≈3 钮；窄栏 2 钮。也用随机再拆一档，避免和窗口强绑定
-        three = pane_w >= 420 or (pane_w >= 340 and self.rng.random() < 0.55)
-        if three:
-            # 发消息略宽，写邮件/语音通话均分剩余
-            send_w = int(avail * self.rng.uniform(0.38, 0.48))
-            rest = avail - send_w - 2 * gap
-            other_w = max(70, rest // 2)
-            # 纠正取整误差
-            send_w = avail - 2 * other_w - 2 * gap
-            labels_btn = [
-                ('发消息', True, send_w),
-                ('写邮件', False, other_w),
-                ('语音通话', False, other_w),
-            ]
+        btn_y = H - btn_h - int(self.rng.uniform(20, 48))
+        # Prefer 3 equal when pane wide enough; else 2
+        if pane_w >= 380:
+            n = 3
+            labels_txt = [u'\u53d1\u6d88\u606f', u'\u5199\u90ae\u4ef6', u'\u8bed\u97f3\u901a\u8bdd']
         else:
-            send_w = int(avail * self.rng.uniform(0.52, 0.62))
-            voice_w = avail - send_w - gap
-            labels_btn = [
-                ('发消息', True, send_w),
-                ('语音通话', False, voice_w),
-            ]
+            n = 2
+            labels_txt = [u'\u53d1\u6d88\u606f', u'\u8bed\u97f3\u901a\u8bdd']
+        cluster_w = pane_w - 2 * side_pad
+        bw = max(64, (cluster_w - (n - 1) * gap) // n)
+        # re-center using actual used width (floor division leftover)
+        used = n * bw + (n - 1) * gap
+        cx = x0 + side_pad + max(0, (cluster_w - used) // 2)
 
         if dark:
-            send_fill = C_PROFILE_SEND_DARK if self.rng.random() < 0.9 else (27, 181, 45)  # green_wechat dark
+            send_fill = C_PROFILE_SEND_DARK if self.rng.random() < 0.9 else (27, 181, 45)
         else:
-            send_fill = C_PROFILE_SEND if self.rng.random() < 0.85 else (21, 182, 40)  # green_wechat
-        cx = x0 + margin
-        for text, is_send, bw in labels_btn:
+            send_fill = C_PROFILE_SEND if self.rng.random() < 0.85 else (21, 182, 40)
+
+        for i, text in enumerate(labels_txt):
+            is_send = (i == 0)
             sx0, sy0 = cx, btn_y
             sx1, sy1 = cx + bw, btn_y + btn_h
             if is_send:
@@ -851,16 +1025,30 @@ class WeComSynthesizer(object):
         W, H = sc['w'], sc['h']
         x0 = sc['nav_w'] + sc['list_w']
         chat_w = W - x0
-        draw.rectangle([x0, 0, W, H], fill=C_CHAT_BG)
+        dark = sc.get('dark', False)
+        chat_bg = C_DARK_CHAT_BG if dark else C_CHAT_BG
+        title_bg = C_DARK_TITLE_BG if dark else C_TITLE_BG
+        sep_c = C_DARK_SEP if dark else C_SEP
+        text_c = C_DARK_TEXT if dark else C_TEXT
+        text_sec = C_DARK_TEXT_SEC if dark else C_TEXT_SEC
+        input_bg = C_DARK_INPUT if dark else C_INPUT_AREA
+        placeholder = C_DARK_TEXT_SEC if dark else C_TEXT_PLACEHOLDER
+        draw.rectangle([x0, 0, W, H], fill=chat_bg)
 
         # title header
         title_h = 48
-        draw.rectangle([x0, 0, W, title_h], fill=C_TITLE_BG)
-        draw.line([(x0, title_h), (W, title_h)], fill=C_SEP)
+        draw.rectangle([x0, 0, W, title_h], fill=title_bg)
+        draw.line([(x0, title_h), (W, title_h)], fill=sep_c)
         title = self.rng.choice(self.names)
-        title = _truncate(draw, title, self.font_title, chat_w - 80)
-        tw, th = _text_size(draw, title, self.font_title)
-        draw.text((x0 + 16, (title_h - th) // 2), title, fill=C_TEXT, font=self.font_title)
+        # ~50% 附加绿色「@微信」
+        show_wx = self.rng.random() < 0.50
+        wx_tag = ' @微信'
+        title_draw = _truncate(draw, title, self.font_title, chat_w - (120 if show_wx else 80))
+        tw, th = _text_size(draw, title_draw, self.font_title)
+        ty = (title_h - th) // 2
+        draw.text((x0 + 16, ty), title_draw, fill=text_c, font=self.font_title)
+        if show_wx:
+            draw.text((x0 + 16 + tw + 4, ty), wx_tag, fill=C_WECHAT_GREEN, font=self.font_title)
 
         # bottom input region
         input_bar_h = 36
@@ -871,13 +1059,11 @@ class WeComSynthesizer(object):
         bottom_pad = 10
 
         input_area_top = H - msg_input_h - input_bar_h
-        # input_bar
         ib_y0 = input_area_top
         ib_y1 = ib_y0 + input_bar_h
-        draw.rectangle([x0, ib_y0, W, H], fill=C_INPUT_AREA)
-        draw.line([(x0, ib_y0), (W, ib_y0)], fill=C_SEP)
+        draw.rectangle([x0, ib_y0, W, H], fill=input_bg)
+        draw.line([(x0, ib_y0), (W, ib_y0)], fill=sep_c)
 
-        # toolbar icons
         ibar_names = ['ibar_emoji.png', 'ibar_scissors.png', 'ibar_image.png',
                       'ibar_folder.png', 'ibar_cloud.png', 'ibar_phone.png', 'ibar_more.png']
         ix = x0 + 12
@@ -886,75 +1072,69 @@ class WeComSynthesizer(object):
             ic = _load_icon(self.icons_dir, nm, 22)
             _paste_rgba(img, ic, (ix, iy))
             ix += 30
-        # right side quick meeting text
-        qm = u'\u5feb\u901f\u4f1a\u8bae'
+        qm = '快速会议'
         qtw, qth = _text_size(draw, qm, self.font_sm)
-        draw.text((W - qtw - 40, ib_y0 + (input_bar_h - qth) // 2), qm, fill=C_TEXT_SEC, font=self.font_sm)
+        draw.text((W - qtw - 40, ib_y0 + (input_bar_h - qth) // 2), qm, fill=text_sec, font=self.font_sm)
 
-        # input_bar label: left cluster of icons
         labels.append((CLS_INPUT_BAR, x0 + 8, ib_y0 + 4, x0 + 8 + 30 * len(ibar_names), ib_y1 - 4))
 
-        # message_input area (big white zone)
         mi_y0 = ib_y1
-        mi_y1 = H - bottom_pad - send_h - 4
-        # keep a bit of space for send button row
         labels.append((CLS_MESSAGE_INPUT, x0 + 8, mi_y0 + 4, W - 8, H - 8))
 
-        # send button
         sb_x1 = W - 16
         sb_x0 = sb_x1 - send_w
         sb_y1 = H - bottom_pad
         sb_y0 = sb_y1 - send_h
         send_active = sc.get('send_active', self.rng.random() < 0.25)
-        s_bg = C_SEND_BG_ACTIVE if send_active else C_SEND_BG
-        s_fg = C_SEND_TEXT_ACTIVE if send_active else C_SEND_TEXT
+        s_bg = C_SEND_BG_ACTIVE if send_active else (C_DARK_SEARCH_BG if dark else C_SEND_BG)
+        s_fg = C_SEND_TEXT_ACTIVE if send_active else text_sec
         draw.rounded_rectangle([sb_x0, sb_y0, sb_x1, sb_y1], radius=4, fill=s_bg)
-        st = u'发送(S)'
+        st = '发送(S)'
         stw, sth = _text_size(draw, st, self.font_sm)
         draw.text((sb_x0 + (send_w - stw) / 2, sb_y0 + (send_h - sth) / 2 - 1),
                   st, fill=s_fg, font=self.font_sm)
         labels.append((CLS_SEND_BUTTON, sb_x0, sb_y0, sb_x1, sb_y1))
 
-        # message viewport
         msg_top = title_h
         msg_bot = ib_y0
         viewport = (x0, msg_top, W, msg_bot)
 
         mode = sc['msg_mode']
         if mode == 'empty' or sc['page'] == 'contacts':
-            # empty state hint
-            tip = u'\u6682\u65e0\u6d88\u606f' if sc['page'] == 'chat' else u'\u9009\u62e9\u8054\u7cfb\u4eba\u5f00\u59cb\u804a\u5929'
+            tip = '暂无消息' if sc['page'] == 'chat' else '选择联系人开始聊天'
             ttw, tth = _text_size(draw, tip, self.font_md)
             draw.text((x0 + (chat_w - ttw) // 2, (msg_top + msg_bot) // 2), tip,
-                      fill=C_TEXT_PLACEHOLDER, font=self.font_md)
+                      fill=placeholder, font=self.font_md)
             return
 
-        # build message list
         msgs = self._build_messages(mode)
         bubble_gap = 10
-        avatar_side = 0  # refs often without per-message avatars
-        max_bubble_w = int(chat_w * 0.55)
+        # 气泡旁小头像（视觉 only，不新增类、不改气泡标签框）
+        avatar_side = int(self.rng.uniform(28, 32))
+        av_gap = 8
+        max_bubble_w = int(chat_w * self.rng.uniform(0.48, 0.62))
 
-        # estimate total height for scroll
         sizes = []
         for m in msgs:
             sizes.append(self._measure_bubble(draw, m, max_bubble_w))
 
-        total_h = sum(s[1] for s in sizes) + bubble_gap * (len(sizes) + 1)
+        total_h = 0
+        for m, s in zip(msgs, sizes):
+            if m['kind'] in ('text', 'card', 'image'):
+                total_h += max(s[1], avatar_side)
+            else:
+                total_h += s[1]
+        total_h += bubble_gap * (len(sizes) + 1)
         view_h = msg_bot - msg_top
         if sc['msg_scroll'] and total_h > view_h:
-            # start partially above
             max_off = total_h - view_h + 40
             y = msg_top + bubble_gap - self.rng.randint(20, max(40, max_off))
         else:
-            # bottom-align if not scrolling, or top if sparse
             if mode in ('sparse', 'incoming', 'outgoing') and total_h < view_h - 40:
                 y = msg_top + 20
             else:
                 y = msg_bot - total_h - 10
-                if y > msg_top + 10:
-                    pass
-                else:
+                if y <= msg_top + 10:
                     y = msg_top + 10
 
         for m, (bw, bh) in zip(msgs, sizes):
@@ -962,45 +1142,69 @@ class WeComSynthesizer(object):
                 tw, th = _text_size(draw, m['text'], self.font_sm)
                 tx = x0 + (chat_w - tw) // 2
                 ty = y
-                # only draw if somewhat visible
                 if ty + th > msg_top and ty < msg_bot:
-                    draw.text((tx, ty), m['text'], fill=C_TEXT_SEC, font=self.font_sm)
+                    draw.text((tx, ty), m['text'], fill=text_sec, font=self.font_sm)
                 y += th + bubble_gap
                 continue
 
-            if m['kind'] == 'card':
-                bh = max(bh, 80)
-                bw = min(max_bubble_w, 220)
+            if m['kind'] in ('card', 'image'):
+                row_h = max(bh, avatar_side)
                 if m['dir'] == 'in':
-                    bx0 = x0 + 16
+                    av_x = x0 + 12
+                    bx0 = av_x + avatar_side + av_gap
                 else:
-                    bx0 = W - 16 - bw
+                    av_x = W - 12 - avatar_side
+                    bx0 = av_x - av_gap - bw
                 by0 = y
+                av_box = (av_x, by0, av_x + avatar_side, by0 + avatar_side)
+                av_vis = _clip_box(av_box, viewport)
+                if av_vis:
+                    av = _avatar_img(self.avatar_paths, avatar_side, self.rng)
+                    vx0, vy0, vx1, vy1 = [int(v) for v in av_vis]
+                    crop = av.crop((vx0 - av_x, vy0 - by0,
+                                    vx0 - av_x + (vx1 - vx0), vy0 - by0 + (vy1 - vy0)))
+                    img.paste(crop, (vx0, vy0), crop if crop.mode == 'RGBA' else None)
                 box = (bx0, by0, bx0 + bw, by0 + bh)
                 vis = _clip_box(box, viewport)
                 if vis:
-                    self._draw_card(img, draw, box, m, vis)
+                    if m['kind'] == 'image':
+                        self._draw_image_msg(img, draw, box, m, vis, dark=dark)
+                    else:
+                        self._draw_card(img, draw, box, m, vis, dark=dark)
                     cls = CLS_INCOMING if m['dir'] == 'in' else CLS_OUTGOING
                     labels.append((cls, vis[0], vis[1], vis[2], vis[3]))
-                y += bh + bubble_gap
+                y += row_h + bubble_gap
                 continue
 
             # text bubble
+            row_h = max(bh, avatar_side)
             if m['dir'] == 'in':
-                bx0 = x0 + 16
+                av_x = x0 + 12
+                bx0 = av_x + avatar_side + av_gap
                 fill = C_INCOMING_ALT if self.rng.random() < 0.35 else C_INCOMING
+                if dark:
+                    fill = (55, 58, 64) if fill == C_INCOMING else (45, 48, 52)
                 cls = CLS_INCOMING
             else:
-                bx0 = W - 16 - bw
+                av_x = W - 12 - avatar_side
+                bx0 = av_x - av_gap - bw
                 fill = C_OUTGOING
                 cls = CLS_OUTGOING
             by0 = y
+            av_box = (av_x, by0, av_x + avatar_side, by0 + avatar_side)
+            av_vis = _clip_box(av_box, viewport)
+            if av_vis:
+                av = _avatar_img(self.avatar_paths, avatar_side, self.rng)
+                vx0, vy0, vx1, vy1 = [int(v) for v in av_vis]
+                crop = av.crop((vx0 - av_x, vy0 - by0,
+                                vx0 - av_x + (vx1 - vx0), vy0 - by0 + (vy1 - vy0)))
+                img.paste(crop, (vx0, vy0), crop if crop.mode == 'RGBA' else None)
             box = (bx0, by0, bx0 + bw, by0 + bh)
             vis = _clip_box(box, viewport)
             if vis:
-                self._draw_bubble(img, draw, box, m['text'], fill, vis)
+                self._draw_bubble(img, draw, box, m['text'], fill, vis, dark=dark)
                 labels.append((cls, vis[0], vis[1], vis[2], vis[3]))
-            y += bh + bubble_gap
+            y += row_h + bubble_gap
             if y > msg_bot + 80:
                 break
 
@@ -1031,17 +1235,53 @@ class WeComSynthesizer(object):
             ])})
 
         for d in dirs:
-            if rng.random() < 0.12:
+            r = rng.random()
+            if r < 0.14:
+                # 图片消息：明显撑宽/撑高
+                aspect = rng.choice(['tall', 'wide', 'square', 'wide', 'tall'])
+                if aspect == 'tall':
+                    iw = rng.randint(120, 180)
+                    ih = rng.randint(180, 280)
+                elif aspect == 'wide':
+                    iw = rng.randint(180, 280)
+                    ih = rng.randint(100, 160)
+                else:
+                    s = rng.randint(140, 220)
+                    iw = ih = s
+                msgs.append({
+                    'kind': 'image',
+                    'dir': d,
+                    'iw': iw,
+                    'ih': ih,
+                })
+            elif r < 0.26:
+                # 链接/文件等卡片，尺寸略有变化
+                style = rng.choice(['link', 'link', 'file'])
                 msgs.append({
                     'kind': 'card',
                     'dir': d,
-                    'text': rng.choice([u'\u4ea7\u54c1\u4ecb\u7ecd', u'\u5b63\u5ea6\u62a5\u544a', u'\u4f1a\u8bae\u9080\u8bf7']),
+                    'style': style,
+                    'text': rng.choice([
+                        '产品介绍', '季度报告', '会议邀请', '设计稿预览',
+                        '需求文档.docx', '截图说明', '活动海报',
+                    ]),
+                    'cw': rng.randint(180, 260),
+                    'ch': rng.randint(72, 120) if style == 'link' else rng.randint(56, 72),
                 })
             else:
-                text = rng.choice(self.messages)
-                # sometimes long
-                if rng.random() < 0.2:
-                    text = text + u'\uff0c' + rng.choice(self.messages)
+                # 文本长短更随机：短 / 中 / 长 / 多句
+                base = rng.choice(self.messages)
+                length_roll = rng.random()
+                if length_roll < 0.25:
+                    text = base[:max(2, len(base)//3)] if len(base) > 4 else base
+                    # 极短：嗯/好的/收到 等
+                    text = rng.choice(['嗯', '好的', '收到', 'OK', '1', '哈哈', base])
+                elif length_roll < 0.55:
+                    text = base
+                elif length_roll < 0.8:
+                    text = base + '，' + rng.choice(self.messages)
+                else:
+                    text = base + '。' + rng.choice(self.messages) + '，' + rng.choice(self.snippets or self.messages)
                 msgs.append({'kind': 'text', 'dir': d, 'text': text})
         return msgs
 
@@ -1049,8 +1289,16 @@ class WeComSynthesizer(object):
         if m['kind'] == 'time':
             tw, th = _text_size(draw, m['text'], self.font_sm)
             return (tw, th)
+        if m['kind'] == 'image':
+            # 图片可接近栏宽，高度独立
+            iw = int(m.get('iw', 160))
+            ih = int(m.get('ih', 160))
+            iw = min(max_w, max(80, iw))
+            return (iw, ih)
         if m['kind'] == 'card':
-            return (min(max_w, 220), 90)
+            cw = int(m.get('cw', 220))
+            ch = int(m.get('ch', 90))
+            return (min(max_w, cw), ch)
         # wrap text
         font = self.font_md
         text = m['text']
@@ -1082,7 +1330,7 @@ class WeComSynthesizer(object):
             lines.append(cur)
         return lines or [u'']
 
-    def _draw_bubble(self, img, draw, box, text, fill, vis):
+    def _draw_bubble(self, img, draw, box, text, fill, vis, dark=False):
         x0, y0, x1, y1 = [int(v) for v in box]
         # draw full bubble then we rely on later content? Better: draw clipped via crop
         bw = x1 - x0
@@ -1095,8 +1343,11 @@ class WeComSynthesizer(object):
         lines = self._wrap(bd, text, font, bw - pad_x * 2)
         line_h = _text_size(bd, u'\u4e2d', font)[1] + 3
         ty = pad_y
+        tfill = (C_DARK_TEXT if dark else C_TEXT) + (255,)
+        if fill == C_OUTGOING:
+            tfill = C_TEXT + (255,)
         for ln in lines:
-            bd.text((pad_x, ty), ln, fill=C_TEXT + (255,), font=font)
+            bd.text((pad_x, ty), ln, fill=tfill, font=font)
             ty += line_h
         # paste visible crop
         vx0, vy0, vx1, vy1 = [int(v) for v in vis]
@@ -1105,19 +1356,80 @@ class WeComSynthesizer(object):
         crop = bubble.crop((src_x0, src_y0, src_x0 + (vx1 - vx0), src_y0 + (vy1 - vy0)))
         img.paste(crop, (vx0, vy0), crop)
 
-    def _draw_card(self, img, draw, box, m, vis):
+    def _draw_card(self, img, draw, box, m, vis, dark=False):
         x0, y0, x1, y1 = [int(v) for v in box]
         bw, bh = x1 - x0, y1 - y0
         card = Image.new('RGBA', (bw, bh), (0, 0, 0, 0))
         cd = ImageDraw.Draw(card)
+        bg = (C_DARK_PANEL if dark else C_CARD_BG) + (255,)
+        outline = (C_DARK_SEP if dark else C_CARD_BORDER) + (255,)
         cd.rounded_rectangle([0, 0, bw - 1, bh - 1], radius=6,
-                             fill=C_CARD_BG + (255,), outline=C_CARD_BORDER + (255,))
-        # fake image area
-        cd.rectangle([8, 8, bw - 8, 48], fill=(200, 210, 220, 255))
-        title = m.get('text', u'\u94fe\u63a5')
-        cd.text((10, 54), _truncate(cd, title, self.font_sm, bw - 20),
-                fill=C_TEXT + (255,), font=self.font_sm)
-        cd.text((10, 72), u'\u7f51\u9875', fill=C_TEXT_SEC + (255,), font=self.font_sm)
+                             fill=bg, outline=outline)
+        style = m.get('style', 'link')
+        title = m.get('text', '链接')
+        tfill = (C_DARK_TEXT if dark else C_TEXT) + (255,)
+        sfill = (C_DARK_TEXT_SEC if dark else C_TEXT_SEC) + (255,)
+        if style == 'file':
+            # 文件行：小色块 + 文件名
+            cd.rounded_rectangle([10, (bh - 28) // 2, 38, (bh - 28) // 2 + 28],
+                                 radius=4, fill=(90, 160, 255, 255))
+            cd.text((46, (bh - 14) // 2), _truncate(cd, title, self.font_sm, bw - 56),
+                    fill=tfill, font=self.font_sm)
+        else:
+            thumb_h = max(28, min(bh - 36, int(bh * 0.45)))
+            img_fill = (70, 74, 80, 255) if dark else (
+                self.rng.randint(160, 210),
+                self.rng.randint(170, 220),
+                self.rng.randint(180, 230),
+                255,
+            )
+            cd.rounded_rectangle([8, 8, bw - 8, 8 + thumb_h], radius=4, fill=img_fill)
+            cd.text((10, 12 + thumb_h), _truncate(cd, title, self.font_sm, bw - 20),
+                    fill=tfill, font=self.font_sm)
+            sub_y = 12 + thumb_h + 16
+            if sub_y + 12 < bh:
+                cd.text((10, sub_y), self.rng.choice(['网页', '腾讯文档', '链接']),
+                        fill=sfill, font=self.font_sm)
+        vx0, vy0, vx1, vy1 = [int(v) for v in vis]
+        src_x0 = vx0 - x0
+        src_y0 = vy0 - y0
+        crop = card.crop((src_x0, src_y0, src_x0 + (vx1 - vx0), src_y0 + (vy1 - vy0)))
+        img.paste(crop, (vx0, vy0), crop)
+
+    def _draw_image_msg(self, img, draw, box, m, vis, dark=False):
+        """纯图片气泡：随机色块/贴头像图，尺寸由 measure 决定。"""
+        x0, y0, x1, y1 = [int(v) for v in box]
+        bw, bh = x1 - x0, y1 - y0
+        card = Image.new('RGBA', (bw, bh), (0, 0, 0, 0))
+        cd = ImageDraw.Draw(card)
+        cd.rounded_rectangle([0, 0, bw - 1, bh - 1], radius=8, fill=(0, 0, 0, 0))
+        # 优先用真实头像库当「图」，否则色块
+        inner = Image.new('RGBA', (bw, bh), (0, 0, 0, 0))
+        if self.avatar_paths and self.rng.random() < 0.75:
+            src = Image.open(self.rng.choice(self.avatar_paths)).convert('RGBA')
+            # cover fill
+            sw, sh = src.size
+            scale = max(bw / float(sw), bh / float(sh))
+            nw, nh = max(1, int(sw * scale)), max(1, int(sh * scale))
+            src = src.resize((nw, nh), Image.LANCZOS)
+            cx = (nw - bw) // 2
+            cy = (nh - bh) // 2
+            src = src.crop((cx, cy, cx + bw, cy + bh))
+            inner.paste(src, (0, 0))
+        else:
+            idraw = ImageDraw.Draw(inner)
+            fill = (
+                self.rng.randint(40, 200),
+                self.rng.randint(40, 200),
+                self.rng.randint(40, 200),
+                255,
+            )
+            idraw.rectangle([0, 0, bw, bh], fill=fill)
+        # rounded mask
+        mask = Image.new('L', (bw, bh), 0)
+        md = ImageDraw.Draw(mask)
+        md.rounded_rectangle([0, 0, bw - 1, bh - 1], radius=8, fill=255)
+        card.paste(inner, (0, 0), mask)
         vx0, vy0, vx1, vy1 = [int(v) for v in vis]
         src_x0 = vx0 - x0
         src_y0 = vy0 - y0

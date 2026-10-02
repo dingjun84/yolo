@@ -39,7 +39,8 @@ def parse_args():
     p.add_argument('--min-area-ratio', type=float, default=5e-5)
     p.add_argument('--preset', type=str, default=None,
                    help='Comma-separated high-fidelity presets to cycle: '
-                        'chat_narrow,chat_wide,contacts_profile,contacts_profile_dark. '
+                        'chat_narrow,chat_wide,chat_wide_groups,chat_dark,'
+                        'contacts_profile,contacts_profile_dark. '
                         'Example: --preset chat_narrow,contacts_profile --count 4')
     p.add_argument('--list-presets', action='store_true',
                    help='Print available presets and exit')
@@ -139,13 +140,11 @@ def main():
         for p in presets:
             key = p.lower().replace('-', '_')
             if key == 'contacts_profile_light':
-                continue
-            if key not in WeComSynthesizer.PRESETS and key != 'contacts_profile_dark':
-                # contacts_profile_dark is accepted by make_scenario
-                if key not in ('contacts_profile_dark',):
-                    print('error: unknown preset %r' % p, file=sys.stderr)
-                    print('choose from: %s' % ', '.join(WeComSynthesizer.PRESETS), file=sys.stderr)
-                    sys.exit(2)
+                key = 'contacts_profile'
+            if key not in WeComSynthesizer.PRESETS:
+                print('error: unknown preset %r' % p, file=sys.stderr)
+                print('choose from: %s' % ', '.join(WeComSynthesizer.PRESETS), file=sys.stderr)
+                sys.exit(2)
 
     ext = 'jpg' if args.format in ('jpg', 'jpeg') else 'png'
     print('Generating %d images -> %s' % (args.count, out_root))
