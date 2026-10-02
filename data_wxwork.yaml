@@ -1,0 +1,29 @@
+# 微信 UI 元素检测数据集
+#
+# 本文件由 prepare_dataset.py 自动生成，请勿手工编辑 ——
+# 改划分或改类别请改脚本后重跑，否则会与实际文件结构不一致。
+#
+# 源目录（只读，脚本从未修改过它们）: wxwork_dataset
+# 本次划分: train 17 张 / val 5 张
+#   —— 划分带「相似图强制同侧」约束：同一窗口的连续滚动帧一定落在同一侧，
+#      否则 val 等于在考 train 的原题，验证指标会虚高。
+#
+# 类别编号 0-10 与各源数据集的既有标注严格对应，顺序不可调整
+# （调整会让所有标签文件的 cls 列失效）。
+
+path: /Users/admin/Desktop/workspace/yolo26/datasets/wxwork_ui
+train: images/train
+val: images/val
+nc: 11
+names:
+  0: self_avatar
+  1: nav_chat_icon
+  2: nav_contacts_icon
+  3: search_bar
+  4: contact_item
+  5: message_input
+  6: send_button
+  7: conversation_item
+  8: incoming_bubble
+  9: outgoing_bubble
+  10: input_bar

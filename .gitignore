@@ -1,0 +1,38 @@
+# ---- conda / local tooling ----
+.conda/
+.workbuddy/
+
+# ---- datasets, screenshots, privacy ----
+datasets/
+wxwork_dataset/
+chat_dataset/
+test/
+*.cache
+
+# ---- training / weights ----
+runs/
+weights/
+*.pt
+*.onnx
+*.engine
+*.mlpackage
+*.torchscript
+
+# ---- gen_data: private assets & outputs ----
+gen_data/assets/avatars/
+gen_data/assets/icons/
+gen_data/assets/icons_wecom/
+gen_data/assets/_icons_backup*/
+gen_data/refs/
+gen_data/out/
+gen_data/out_*/
+gen_data/__pycache__/
+
+# ---- temp / junk ----
+bus.jpg
+zidane.jpg
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.DS_Store
