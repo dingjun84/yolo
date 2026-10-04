@@ -38,3 +38,14 @@ __pycache__/
 .DS_Store
 
 gen_data/assets/_refs/
+/gen_data/splits_pages100
+/gen_data/preview_cust4
+/gen_data/preview_font
+gen_data/data_pages100.yaml
+/gen_data/preview_search
+gen_data/synth_assets.tgz
+gen_data/real_search.png
+gen_data/real_customers.png
+gen_data/real_chat.png
+gen_data/assets/._avatars
+gen_data/assets/._icons

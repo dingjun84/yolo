@@ -92,6 +92,11 @@ def _load_font(size):
         '/System/Library/Fonts/Hiragino Sans GB.ttc',
         '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
         '/Library/Fonts/Arial Unicode.ttf',
+        'C:/Windows/Fonts/msyh.ttc',
+        'C:/Windows/Fonts/msyhbd.ttc',
+        'C:/Windows/Fonts/simhei.ttf',
+        'C:/Windows/Fonts/simsun.ttc',
+        '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
         '/System/Library/Fonts/Helvetica.ttc',
     ]
     for p in candidates:
@@ -353,7 +358,8 @@ class WeComSynthesizer(object):
         else:
             q = rng.choice(giv) + rng.choice(giv)
 
-        n = rng.randint(2, 6)
+        # 真实搜索常只有 1 条蓝底结果，这种最容易漏检，单独加量
+        n = 1 if rng.random() < 0.45 else rng.randint(2, 6)
 
         def classify(nm):
             if nm.startswith(q) and not nm.endswith(q):
@@ -389,7 +395,9 @@ class WeComSynthesizer(object):
                     return nm
             return None
 
-        if n >= 3:
+        if n == 1:
+            positions = ['prefix']
+        elif n >= 3:
             positions = ['prefix', 'suffix', 'middle']
             while len(positions) < n:
                 positions.append(rng.choice(['prefix', 'suffix', 'middle']))
@@ -471,8 +479,13 @@ class WeComSynthesizer(object):
 
         corp_names = [u'\u5fae\u4fe1', u'\u817e\u8baf', u'\u963f\u91cc\u5df4\u5df4',
                       u'\u5b57\u8282\u8df3\u52a8', u'\u534e\u4e3a', u'\u7f8e\u56e2',
-                      u'\u597d\u51f6\u706b\u79d1\u6280', u'\u767e\u5ea6']
-        if n == 2:
+                      u'\u597d\u51f6\u706b\u79d1\u6280', u'\u767e\u5ea6',
+                      u'\u6df1\u5733\u597d\u51f6\u706b\u79d1\u6280\u6709\u9650\u516c\u53f8',
+                      u'\u6df1\u5733\u7845\u57fa\u542f\u521b\u79d1\u6280\u6709\u9650\u516c\u53f8']
+        long_corps = corp_names[-2:]
+        if n == 1:
+            flags = [True]
+        elif n == 2:
             flags = [True, False]
         else:
             flags = [True, False]
@@ -481,7 +494,8 @@ class WeComSynthesizer(object):
         rng.shuffle(flags)
         hits = []
         for nm, want in zip(names, flags):
-            corp = rng.choice(corp_names) if want else None
+            pool = long_corps if n == 1 else corp_names
+            corp = rng.choice(pool) if want else None
             hits.append({'name': nm, 'corp': corp})
         return q, hits
 
@@ -495,6 +509,7 @@ class WeComSynthesizer(object):
         show_groups = None  # None=宽栏默认画分组；False=强制不画；True=强制画
         search_query = None
         search_hits = None
+        search_header = False
         show_profile = True
         profile_name = None
         profile_corp = None
@@ -511,21 +526,21 @@ class WeComSynthesizer(object):
             show_groups = True
 
         if name == 'contacts_customers':
-            # 宽导航含「分组/单聊/群聊」+ 客户目录（只有几行，下面留白）。
-            # 搜索框在目录栏顶部，只框灰色条。
-            w, h = 1064, 808
+            # 四栏：窄导航、客户目录、客户列表、右侧留白。
+            # 搜索框只在第二栏。第三栏和第四栏顶上是同一条「我的客户」标题。
+            w, h = 1180, 760
             if jitter:
-                w = rng.randint(1000, 1360)
-                h = rng.randint(720, 920)
-            nav_wide = True
-            nav_w = rng.randint(150, 176) if jitter else 164
-            list_w = rng.randint(200, 320) if jitter else 250
+                w = rng.randint(1080, 1360)
+                h = rng.randint(700, 900)
+            nav_wide = False
+            nav_w = rng.randint(64, 76) if jitter else 70
+            list_w = rng.randint(210, 260) if jitter else 230
             page = 'contacts'
-            n_conv = rng.choice([3, 4, 5, 6]) if jitter else 4
+            n_conv = 5
             msg_mode = 'empty'
             chat_badge = rng.choice([None]*10 + [1, 2, 3, 9])
             contacts_badge = rng.choice([None]*12 + [0, 1])
-            show_groups = True
+            show_groups = False
             list_style = 'categories'
             selected_idx = 1  # 我的客户，右侧才是联系人行
         elif name == 'chat_narrow':
@@ -588,21 +603,21 @@ class WeComSynthesizer(object):
             contacts_badge = rng.choice([None]*14 + [0, 1])
             # dark already set if contacts_profile_dark
         elif name == 'contacts_search':
-            # 通讯录搜索结果：搜索框是 1～2 字查询，下列 2～6 条部分同名的人。
-            # 行仍走联系人列表画法，每行 contact_item。右侧资料页不盖住列表。
+            # 通讯录搜索：多数是窄导航 + 一条蓝底结果 + 右侧资料（对照真实截图）。
+            # 仍保留少量多结果和宽导航。每行是 contact_item。
             w, h = 1100, 740
             if jitter:
                 w = rng.randint(1000, 1400)
                 h = rng.randint(700, 920)
-            nav_wide = (rng.random() < 0.6) if jitter else True
+            nav_wide = (rng.random() < 0.2) if jitter else False
             if nav_wide:
                 nav_w = rng.randint(150, 175) if jitter else 160
                 if show_groups is None:
                     show_groups = True
             else:
-                nav_w = rng.randint(56, 64) if jitter else 60
+                nav_w = rng.randint(64, 76) if jitter else 70
                 show_groups = False
-            list_w = int(w * (rng.uniform(0.24, 0.34) if jitter else 0.28))
+            list_w = int(w * (rng.uniform(0.30, 0.40) if jitter else 0.34))
             page = 'contacts'
             search_query, search_hits = self._sample_search_hits()
             n_conv = len(search_hits)
@@ -610,9 +625,12 @@ class WeComSynthesizer(object):
             chat_badge = rng.choice([None] * 12 + [1, 2, 3, 5])
             contacts_badge = rng.choice([None] * 14 + [0, 1])
             list_style = 'people'
-            if jitter and rng.random() < 0.22:
+            search_header = rng.random() < 0.25
+            if jitter and rng.random() < 0.15:
                 dark = True
-            if rng.random() < 0.78:
+            # 单条结果几乎总是选中并打开资料，多条结果也多数如此
+            show_p = 0.92 if n_conv == 1 else 0.8
+            if rng.random() < show_p:
                 selected_idx = rng.randrange(n_conv)
                 show_profile = True
                 profile_name = search_hits[selected_idx]['name']
@@ -651,6 +669,7 @@ class WeComSynthesizer(object):
             'list_style': locals().get('list_style', 'people'),
             'search_query': search_query,
             'search_hits': search_hits,
+            'search_header': search_header,
             'show_profile': show_profile,
             'profile_name': profile_name,
             'profile_corp': profile_corp,
@@ -1059,8 +1078,8 @@ class WeComSynthesizer(object):
         tag = (u"@" + corp) if corp else u""
         if tag:
             avail = max(40, list_w - name_x - 16)
-            if _text_size(rd, tag, font)[0] > int(avail * 0.62):
-                tag = _truncate(rd, tag, font, int(avail * 0.62))
+            if _text_size(rd, tag, font)[0] > int(avail * 0.85):
+                tag = _truncate(rd, tag, font, int(avail * 0.85))
         tag_w = (_text_size(rd, tag, font)[0] + 6) if tag else 0
         max_name_w = max(24, list_w - name_x - 16 - tag_w)
         name_t = _truncate(rd, name, font, max_name_w)
@@ -1076,7 +1095,7 @@ class WeComSynthesizer(object):
         if not tag:
             return name_x + nw
         if selected:
-            tag_fill = (210, 255, 224) if corp == u"\u5fae\u4fe1" else (255, 236, 214)
+            tag_fill = name_fill
         elif corp == u"\u5fae\u4fe1":
             tag_fill = C_WECHAT_GREEN
         else:
@@ -1085,53 +1104,75 @@ class WeComSynthesizer(object):
         return name_x + nw + 4 + _text_size(rd, tag, font)[0]
 
     def _draw_customer_pane(self, img, draw, labels, sc):
-        """Right side of the customer page. Folder headers are not labeled.
-        Each person is a contact_item: one centered line, box hugs the row.
+        """客户页右侧两栏。第三栏是客户列表，第四栏留白。
+
+        两栏顶上是同一条标题，竖分隔线从标题下边才开始，标题本身不断开。
+        分组标题和「共N位客户」不打标；每个人是一条 contact_item。
         """
         W, H = sc["w"], sc["h"]
         x0 = sc["nav_w"] + sc["list_w"]
         dark = sc.get("dark", False)
-        bg = C_DARK_BG if dark else (255, 255, 255)
+        bg = (32, 33, 36) if dark else (255, 255, 255)
         text_c = C_DARK_TEXT if dark else C_TEXT
         sec_c = C_DARK_TEXT_SEC if dark else C_TEXT_SEC
+        sep_c = C_DARK_SEP if dark else C_SEP
+        title_bg = C_DARK_TITLE_BG if dark else (255, 255, 255)
         draw.rectangle([x0, 0, W, H], fill=bg)
-        draw.text((x0 + 20, 16), u"\u6211\u7684\u5ba2\u6237", fill=text_c, font=self.font_title)
-        # tag row, not a contact
-        ty = 50
-        draw.rounded_rectangle([x0 + 20, ty, x0 + 36, ty + 16], radius=3, fill=(46, 184, 92))
-        draw.text((x0 + 44, ty), u"\u6807\u7b7e", fill=text_c, font=self.font_md)
-        draw.text((W - 28, ty), u">", fill=sec_c, font=self.font_sm)
+
+        remain = max(1, W - x0)
+        col3 = int(remain * self.rng.uniform(0.34, 0.46))
+        col3 = max(220, min(col3, remain - 180))
+        x3 = x0 + col3
+
+        title_h = 46
+        draw.rectangle([x0, 0, W, title_h], fill=title_bg)
+        title = u"我的客户"
+        tw, th = _text_size(draw, title, self.font_title)
+        draw.text((x0 + 16, (title_h - th) // 2), title, fill=text_c, font=self.font_title)
+        draw.line([(x0, title_h), (W, title_h)], fill=sep_c)
+        draw.line([(x3, title_h), (x3, H)], fill=sep_c)
+
+        mark = (80, 84, 92) if dark else (206, 210, 216)
+        cx = x3 + (W - x3) // 2
+        cy = title_h + (H - title_h) // 2
+        draw.ellipse([cx - 26, cy - 18, cx + 26, cy + 14], outline=mark)
+        draw.ellipse([cx + 10, cy + 6, cx + 34, cy + 26], outline=mark)
+
+        ty = title_h + 16
+        draw.rounded_rectangle([x0 + 16, ty, x0 + 32, ty + 16], radius=3, fill=(46, 184, 92))
+        draw.text((x0 + 40, ty - 1), u"标签", fill=text_c, font=self.font_md)
+        draw.text((x3 - 22, ty), u">", fill=sec_c, font=self.font_sm)
         y = ty + 34
 
-        wx = u"\u5fae\u4fe1"
+        wx = u"微信"
         comp = self.rng.choice([c for c in self._CORPS if c != wx])
         groups = [
-            (u"\u5fae\u4fe1\u8054\u7cfb\u4eba", wx, self.rng.randint(1, 3)),
-            (comp, comp, self.rng.randint(1, 3)),
+            (u"微信联系人", wx, self.rng.randint(1, 3)),
+            (comp, comp, self.rng.randint(1, 2)),
         ]
         row_h = self.rng.randint(46, 54)
         total = 0
-        max_w = W - x0 - 24
+        max_w = col3 - 20
         for gname, corp, n in groups:
             if y + 22 + row_h > H - 24:
                 break
-            draw.polygon([(x0 + 18, y + 4), (x0 + 24, y + 8), (x0 + 18, y + 12)], fill=sec_c)
-            draw.rounded_rectangle([x0 + 28, y, x0 + 44, y + 14], radius=2, fill=(88, 150, 230))
-            draw.text((x0 + 50, y - 1), gname, fill=sec_c, font=self.font_sm)
-            y += 24
+            draw.polygon([(x0 + 18, y + 6), (x0 + 26, y + 10), (x0 + 18, y + 14)], fill=sec_c)
+            draw.rounded_rectangle([x0 + 30, y + 1, x0 + 46, y + 15], radius=2, fill=(88, 150, 230))
+            draw.text((x0 + 52, y - 1), gname, fill=sec_c, font=self.font_sm)
+            y += 26
             for _ in range(n):
-                if y + row_h > H - 20:
+                if y + row_h > H - 28:
                     break
                 name = self.rng.choice(self.names)
                 right = self._paint_customer_row(
-                    img, x0 + 12, y, max_w, row_h, name, corp, text_c)
-                labels.append((CLS_CONTACT_ITEM, x0 + 12, y, x0 + 12 + right, y + row_h))
-                y += row_h + 4
+                    img, x0 + 8, y, max_w, row_h, name, corp, text_c)
+                labels.append((CLS_CONTACT_ITEM, x0 + 8, y, x0 + 8 + right, y + row_h))
+                y += row_h + 2
                 total += 1
         if total:
-            cap = u"\u5171%d\u4f4d\u5ba2\u6237" % total
-            tw, th = _text_size(draw, cap, self.font_sm)
-            draw.text((x0 + (W - x0 - tw) // 2, y + 4), cap, fill=sec_c, font=self.font_sm)
+            cap = u"共%d位客户" % total
+            cw, ch = _text_size(draw, cap, self.font_sm)
+            draw.text((x0 + (col3 - cw) // 2, min(y + 8, H - 22)), cap, fill=sec_c, font=self.font_sm)
 
     def _paint_customer_row(self, img, x, y, max_w, row_h, name, corp, name_fill):
         av_sz = max(28, row_h - 16)
@@ -1199,7 +1240,7 @@ class WeComSynthesizer(object):
         list_bot = H
         # 搜索结果：细字「联系人」标题，本身不是 contact_item
         search_hits = sc.get('search_hits')
-        if search_hits:
+        if search_hits and sc.get('search_header'):
             draw.text((x0 + 14, list_top + 2), u'联系人', fill=snip_c, font=self.font_sm)
             list_top = list_top + 22
         viewport = (x0, list_top, x0 + list_w, list_bot)
@@ -1904,7 +1945,7 @@ def load_lines(path):
     if not path or not os.path.exists(path):
         return []
     lines = []
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith('#'):
