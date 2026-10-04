@@ -42,7 +42,7 @@ def parse_args():
     p.add_argument('--preset', type=str, default=None,
                    help='Comma-separated high-fidelity presets to cycle: '
                         'chat_narrow,chat_wide,chat_wide_groups,chat_dark,'
-                        'contacts_profile,contacts_profile_dark. '
+                        'contacts_profile,contacts_profile_dark,contacts_customers. '
                         'Example: --preset chat_narrow,contacts_profile --count 4')
     p.add_argument('--list-presets', action='store_true',
                    help='Print available presets and exit')

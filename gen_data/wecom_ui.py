@@ -316,6 +316,7 @@ class WeComSynthesizer(object):
         'chat_dark',
         'contacts_profile',
         'contacts_profile_dark',
+        'contacts_customers',
     )
 
     def make_scenario(self, preset, jitter=True):
@@ -337,16 +338,36 @@ class WeComSynthesizer(object):
             name = 'chat_wide'
             show_groups = True
 
-        if name == 'chat_narrow':
+        if name == 'contacts_customers':
+            # 宽导航含「分组/单聊/群聊」+ 客户目录（只有几行，下面留白）。
+            # 搜索框在目录栏顶部，只框灰色条。
+            w, h = 1064, 808
+            if jitter:
+                w = rng.randint(1000, 1360)
+                h = rng.randint(720, 920)
+            nav_wide = True
+            nav_w = rng.randint(150, 176) if jitter else 164
+            list_w = rng.randint(200, 320) if jitter else 250
+            page = 'chat'
+            n_conv = rng.choice([3, 4, 5, 6]) if jitter else 4
+            msg_mode = 'empty'
+            chat_badge = rng.choice([None]*10 + [1, 2, 3, 9])
+            contacts_badge = rng.choice([None]*12 + [0, 1])
+            show_groups = True
+            list_style = 'categories'
+        elif name == 'chat_narrow':
             w, h = 1100, 700
             if jitter:
                 w = rng.randint(980, 1200)
                 h = rng.randint(640, 780)
             nav_wide = False
             nav_w = rng.randint(56, 64) if jitter else 60
-            list_w = int(w * (rng.uniform(0.22, 0.28) if jitter else 0.25))
+            list_w = int(w * (rng.uniform(0.18, 0.36) if jitter else 0.25))
             page = 'chat'
-            n_conv = rng.choice([8, 10, 12, 14]) if jitter else 12
+            if jitter and rng.random() < 0.30:
+                n_conv = rng.choice([1, 2, 3, 4])
+            else:
+                n_conv = rng.choice([8, 10, 12, 14]) if jitter else 12
             msg_mode = rng.choice(['mixed', 'dense', 'incoming']) if jitter else 'mixed'
             chat_badge = rng.choice([None]*12 + [1, 2, 3, 5, 9, 99, 'dot'])
             contacts_badge = rng.choice([None]*14 + [0, 1])
@@ -360,9 +381,12 @@ class WeComSynthesizer(object):
                 h = rng.randint(720, 900)
             nav_wide = True
             nav_w = rng.randint(150, 175) if jitter else 160
-            list_w = int(w * (rng.uniform(0.20, 0.26) if jitter else 0.23))
+            list_w = int(w * (rng.uniform(0.16, 0.32) if jitter else 0.23))
             page = 'chat'
-            n_conv = rng.choice([8, 10, 12, 15]) if jitter else 12
+            if jitter and rng.random() < 0.30:
+                n_conv = rng.choice([1, 2, 3, 4])
+            else:
+                n_conv = rng.choice([8, 10, 12, 15]) if jitter else 12
             msg_mode = rng.choice(['mixed', 'dense', 'outgoing']) if jitter else 'mixed'
             chat_badge = rng.choice([None]*12 + [1, 2, 3, 5, 9, 99, 'dot'])
             contacts_badge = rng.choice([None]*14 + [0, 1])
@@ -416,6 +440,7 @@ class WeComSynthesizer(object):
             'extra_nav_dots': bool(page == 'chat' and rng.random() < 0.45),
             'show_groups': bool(show_groups) if show_groups is not None else False,
             'show_nav_groups': bool(not nav_wide),
+            'list_style': locals().get('list_style', 'people'),
         }
 
     def sample_scenario(self, preset=None):
@@ -427,6 +452,8 @@ class WeComSynthesizer(object):
 
         rng = self.rng
         # 提高典型页命中率
+        if rng.random() < 0.18:
+            return self.make_scenario('contacts_customers', jitter=True)
         if rng.random() < 0.40:
             return self.make_scenario(rng.choice(self.PRESETS), jitter=True)
 
@@ -443,10 +470,18 @@ class WeComSynthesizer(object):
             h = rng.randint(560, 700)
 
         n_conv = rng.choice([0, 1, 2, 3, 5, 8, 12, 15, 20])
+        list_style = 'people'
         if page == 'contacts':
-            n_conv = rng.choice([3, 5, 8, 12, 18])
+            if rng.random() < 0.45:
+                list_style = 'categories'
+                n_conv = rng.choice([3, 4, 5, 6])
+                page = 'chat'
+                msg_mode = 'empty'
+            else:
+                n_conv = rng.choice([2, 3, 5, 8, 12, 18])
 
-        msg_mode = rng.choice(['empty', 'incoming', 'outgoing', 'mixed', 'sparse', 'dense'])
+        if list_style != 'categories':
+            msg_mode = rng.choice(['empty', 'incoming', 'outgoing', 'mixed', 'sparse', 'dense'])
         list_scroll = rng.random() < 0.45 and n_conv >= 6
         msg_scroll = rng.random() < 0.4 and msg_mode in ('mixed', 'dense', 'incoming', 'outgoing')
 
@@ -481,6 +516,7 @@ class WeComSynthesizer(object):
             'extra_nav_dots': rng.random() < 0.25,
             'show_groups': bool(nav_wide and rng.random() < 0.75),
             'show_nav_groups': bool((not nav_wide) and rng.random() < 0.85),
+            'list_style': list_style,
         }
 
     def render(self, scenario=None, preset=None):
@@ -806,12 +842,16 @@ class WeComSynthesizer(object):
         draw.line([(x0 + list_w - 1, 0), (x0 + list_w - 1, H)], fill=sep_c)
 
         # search bar row（截图约 32–34px 高、圆角胶囊）
-        search_h = 32
-        pad = 12
+        # 框只包灰色胶囊，不含右侧「+」。宽度随栏宽变，再随机收窄一截。
+        search_h = self.rng.choice([30, 32, 34])
+        pad = self.rng.choice([10, 12, 14])
         plus_sz = 26
-        sy = 12
+        sy = self.rng.choice([10, 12, 14])
         sx = x0 + pad
         sw = list_w - pad * 2 - plus_sz - 8
+        if self.rng.random() < 0.45:
+            sw = int(sw * self.rng.uniform(0.78, 0.94))
+        sw = max(110, min(sw, list_w - pad - plus_sz - 16))
         sh = search_h
         draw.rounded_rectangle([sx, sy, sx + sw, sy + sh], radius=6, fill=search_bg)
         # search icon + placeholder
@@ -830,6 +870,10 @@ class WeComSynthesizer(object):
         list_top = sy + sh + 8
         list_bot = H
         viewport = (x0, list_top, x0 + list_w, list_bot)
+
+        if sc.get('list_style') == 'categories':
+            self._draw_category_list(img, draw, x0, list_w, list_top, H, name_c, snip_c, sc)
+            return
 
         n = sc['n_conv']
         # 中间栏每行固定高度（滚动只裁可见部分，不改行高）
@@ -925,6 +969,32 @@ class WeComSynthesizer(object):
                 break
 
     # -------------------------------------------------------- contact profile
+    def _draw_category_list(self, img, draw, x0, list_w, list_top, H, name_c, snip_c, sc):
+        """客户/分组目录：只有几行，下面留白。这些行不是 contact_item，不打标签。"""
+        company = self.rng.choice(self.names)
+        cats = [
+            '新的客户', '我的客户', '智能机器人', company, '添加成员',
+        ]
+        n = max(1, min(int(sc.get('n_conv') or 4), len(cats)))
+        row_h = 42
+        y = list_top
+        sel = sc.get('selected_idx', 0)
+        if sel < 0 or sel >= n:
+            sel = 0
+        for i in range(n):
+            if y + row_h > H - 4:
+                break
+            if i == sel:
+                draw.rectangle([x0, y, x0 + list_w - 1, y + row_h], fill=C_SELECTED_LIST)
+            ix = x0 + 14
+            iy = y + (row_h - 18) // 2
+            fill = (255, 255, 255) if i == sel else (70, 160, 95)
+            draw.rounded_rectangle([ix, iy, ix + 18, iy + 18], radius=3, fill=fill)
+            text_fill = C_SELECTED_LIST_TEXT if i == sel else name_c
+            draw.text((ix + 26, y + 11), cats[i], fill=text_fill, font=self.font_md)
+            draw.text((x0 + list_w - 22, y + 12), '>', fill=snip_c, font=self.font_sm)
+            y += row_h
+
     def _draw_contact_profile(self, img, draw, labels, sc):
         """通讯录/客户详情右侧：类 13「发消息」。
         按钮等宽居中簇：大侧边距 + 等宽 3 钮（窄栏 2 钮），不贴窗边。
@@ -1123,9 +1193,18 @@ class WeComSynthesizer(object):
 
         mode = sc['msg_mode']
         if mode == 'empty' or sc['page'] == 'contacts':
+            # 空态占位（双圈），不打标签，避免被学成 outgoing_bubble
+            cx = x0 + chat_w // 2
+            cy = (msg_top + msg_bot) // 2 - 16
+            try:
+                draw.ellipse([cx - 36, cy - 22, cx - 6, cy + 8], outline=placeholder, width=2)
+                draw.ellipse([cx - 10, cy - 8, cx + 28, cy + 28], outline=placeholder, width=2)
+            except TypeError:
+                draw.ellipse([cx - 36, cy - 22, cx - 6, cy + 8], outline=placeholder)
+                draw.ellipse([cx - 10, cy - 8, cx + 28, cy + 28], outline=placeholder)
             tip = '暂无消息' if sc['page'] == 'chat' else '选择联系人开始聊天'
             ttw, tth = _text_size(draw, tip, self.font_md)
-            draw.text((x0 + (chat_w - ttw) // 2, (msg_top + msg_bot) // 2), tip,
+            draw.text((x0 + (chat_w - ttw) // 2, cy + 40), tip,
                       fill=placeholder, font=self.font_md)
             return
 

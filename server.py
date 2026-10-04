@@ -10,6 +10,7 @@
     GET  /classes          类别列表
     POST /predict          上传图片 -> JSON 检测结果
     POST /predict/image    上传图片 -> 返回标注后的 JPEG
+    POST /ocr              上传图片 -> JSON 数组，字段与本机 macosocr/winocr 相同
 
 /predict 支持三种传图方式（按优先级）:
     1. multipart/form-data  字段名 file / image / img（任选）
@@ -31,6 +32,12 @@
     企业微信桌面版截图 2336x1536，导航图标、发送按钮在整图里只有十几到几十像素，
     640 相当于先缩掉 3 倍多，小目标直接消失 —— 同一张截图实测 640 只检出 1 个目标，
     1280 检出 9 个。所以默认就是 1280，不要为了省时间往下调。
+
+/ocr 的成功响应是 JSON 数组，不是包在对象里：
+    [{"text":"张三","x":12,"y":40,"w":96,"h":24,"confidence":0.98}]
+坐标是原图像素、左上角为原点。引擎是 RapidOCR（ONNX，PP-OCRv4），
+第一次请求才加载。默认先放大 2 倍再识别，坐标换算回原图。
+查询参数：upscale=2（1–8），text_score=0.3（低于此分的行不返回）。
 """
 
 from __future__ import annotations
@@ -69,23 +76,27 @@ MODEL: YOLO | None = None
 MODEL_PATH: str = ""
 CLASS_NAMES: dict[int, str] = {}
 
-# 权威类别表：与训练配置 data_wxwork.yaml 严格一一对应。
+# 权威类别表：与 15 类训练配置严格一一对应。
 # 接口对外一律返回名称、不返回裸数字 id，这张表保证「数字 -> 名称」这一步永远成立 ——
 # 即使权重被重新导出/裁剪掉内嵌 names，也不会退化成返回 "7" 这种数字。
 #
 # ⚠️ 顺序不可调整：id 是训练时写进标签文件的类别号，改顺序会让所有输出错位。
 CLASS_NAMES_CANONICAL: dict[int, str] = {
-    0: "self_avatar",          # 本人头像（导航区当前登录账号头像）
-    1: "nav_chat_icon",        # 导航栏「消息」图标
-    2: "nav_contacts_icon",    # 导航栏「通讯录」图标
-    3: "search_bar",           # 搜索框
-    4: "contact_item",         # 通讯录中的联系人条目（列表中的一行）
-    5: "message_input",        # 消息输入框（文本编辑区）
-    6: "send_button",          # 发送按钮
-    7: "conversation_item",    # 会话列表中的会话条目（列表中的一行）
-    8: "incoming_bubble",      # 接收的消息气泡
-    9: "outgoing_bubble",      # 发送的消息气泡
-    10: "input_bar",           # 底部输入区（含表情/附件等按钮的整体）
+    0: "self_avatar",              # 本人头像（导航区当前登录账号头像）
+    1: "nav_chat_icon",            # 导航栏「消息」图标
+    2: "nav_contacts_icon",        # 导航栏「通讯录」图标
+    3: "search_bar",               # 搜索框
+    4: "contact_item",             # 通讯录中的联系人条目（列表中的一行）
+    5: "message_input",            # 消息输入框（文本编辑区）
+    6: "send_button",              # 发送按钮
+    7: "conversation_item",        # 会话列表中的会话条目（列表中的一行）
+    8: "incoming_bubble",          # 接收的消息气泡
+    9: "outgoing_bubble",          # 发送的消息气泡
+    10: "input_bar",               # 底部输入区（含表情/附件等按钮的整体）
+    11: "single_chat",             # 分组面板里的单聊图标
+    12: "group_chat",              # 分组面板里的群聊图标
+    13: "contact_send_message",    # 联系人详情「发消息」
+    14: "nav_groups_icon",         # 导航栏「分组」图标
 }
 
 # imgsz=1280 必须与训练分辨率一致（runs/train/wxwork_ui/args.yaml: imgsz=1280），
@@ -238,6 +249,122 @@ def encode_jpeg(img: np.ndarray, quality: int = 85) -> bytes:
     return buf.tobytes()
 
 
+
+# --------------------------------------------------------------------------
+# OCR（与 llm_rpa 的 macosocr / winocr 同一份 JSON 契约）
+# --------------------------------------------------------------------------
+OCR_ENGINE = None
+OCR_LOCK = threading.Lock()
+
+
+def _is_cjk(ch: str) -> bool:
+    v = ord(ch)
+    return (
+        0x3000 <= v <= 0x303F
+        or 0x3400 <= v <= 0x4DBF
+        or 0x4E00 <= v <= 0x9FFF
+        or 0xF900 <= v <= 0xFAFF
+        or 0xFF00 <= v <= 0xFFEF
+    )
+
+
+def collapse_cjk_spaces(text: str) -> str:
+    """去掉两侧都是中日韩字符的空格，拉丁文之间的空格保留。与 winocr 相同。"""
+    chars = list(text)
+    out: list[str] = []
+    i = 0
+    while i < len(chars):
+        if chars[i] != " ":
+            out.append(chars[i])
+            i += 1
+            continue
+        start = i
+        while i < len(chars) and chars[i] == " ":
+            i += 1
+        prev = chars[start - 1] if start > 0 else ""
+        nxt = chars[i] if i < len(chars) else ""
+        if not (prev and nxt and _is_cjk(prev) and _is_cjk(nxt)):
+            out.extend([" "] * (i - start))
+    return "".join(out)
+
+
+def quad_to_xywh(box) -> tuple[int, int, int, int]:
+    xs = [float(p[0]) for p in box]
+    ys = [float(p[1]) for p in box]
+    x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
+    return (
+        int(round(x1)),
+        int(round(y1)),
+        max(0, int(round(x2 - x1))),
+        max(0, int(round(y2 - y1))),
+    )
+
+
+def get_ocr():
+    """第一次调用才加载 RapidOCR，避免和正在跑的训练抢启动。"""
+    global OCR_ENGINE
+    if OCR_ENGINE is None:
+        from rapidocr_onnxruntime import RapidOCR
+
+        OCR_ENGINE = RapidOCR()
+    return OCR_ENGINE
+
+
+def run_ocr(img: np.ndarray, upscale: float, text_score: float) -> list[dict]:
+    work = img
+    if abs(upscale - 1.0) > 1e-3:
+        work = cv2.resize(
+            img, None, fx=upscale, fy=upscale, interpolation=cv2.INTER_CUBIC
+        )
+    with OCR_LOCK:
+        result, _elapse = get_ocr()(work, text_score=text_score)
+    boxes: list[dict] = []
+    if not result:
+        return boxes
+    for item in result:
+        quad, raw_text, score = item[0], str(item[1]), float(item[2])
+        text = collapse_cjk_spaces(raw_text.strip())
+        if not text:
+            continue
+        if score != score:  # NaN
+            score = 0.0
+        score = min(max(score, 0.0), 1.0)
+        x, y, w, h = quad_to_xywh(quad)
+        boxes.append({
+            "text": text,
+            "x": int(round(x / upscale)),
+            "y": int(round(y / upscale)),
+            "w": max(0, int(round(w / upscale))),
+            "h": max(0, int(round(h / upscale))),
+            "confidence": score,
+        })
+    return boxes
+
+
+def parse_ocr_params() -> tuple[float, float]:
+    src: dict = {}
+    if request.is_json:
+        body = request.get_json(silent=True) or {}
+        for key in ("upscale", "text_score"):
+            if key in body:
+                src[key] = body[key]
+    for key in ("upscale", "text_score"):
+        if key in request.args:
+            src[key] = request.args[key]
+    try:
+        upscale = float(src.get("upscale", 2))
+    except (TypeError, ValueError) as e:
+        raise ValueError("upscale 不是数字") from e
+    if not (1.0 <= upscale <= 8.0):
+        raise ValueError("upscale 必须在 1 到 8 之间（传 1 表示不放大）")
+    try:
+        text_score = float(src.get("text_score", 0.3))
+    except (TypeError, ValueError) as e:
+        raise ValueError("text_score 不是数字") from e
+    text_score = min(max(text_score, 0.0), 1.0)
+    return upscale, text_score
+
+
 # --------------------------------------------------------------------------
 # 路由
 # --------------------------------------------------------------------------
@@ -253,6 +380,10 @@ def health():
         "defaults": DEFAULTS,
         "uptime_sec": round(time.time() - START_TS, 1),
         "host": socket.gethostname(),
+        "ocr": {
+            "engine": "rapidocr-onnxruntime",
+            "loaded": OCR_ENGINE is not None,
+        },
     })
 
 
@@ -287,6 +418,27 @@ def predict():
     return jsonify(out)
 
 
+
+@app.post("/ocr")
+def ocr():
+    """返回与 macosocr/winocr 相同的 JSON 数组。失败时才是 {success:false, error}。"""
+    try:
+        img = load_from_request()
+        upscale, text_score = parse_ocr_params()
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"success": False, "error": f"读取图片失败: {e}"}), 400
+    try:
+        boxes = run_ocr(img, upscale, text_score)
+    except Exception as e:
+        return jsonify({"success": False, "error": f"OCR 失败: {e}"}), 500
+    return Response(
+        json.dumps(boxes, ensure_ascii=False),
+        mimetype="application/json; charset=utf-8",
+    )
+
+
 @app.post("/predict/image")
 def predict_image():
     try:
@@ -312,7 +464,7 @@ def not_found(_):
     return jsonify({
         "success": False,
         "error": "接口不存在",
-        "routes": ["GET /", "GET /health", "GET /classes", "POST /predict", "POST /predict/image"],
+        "routes": ["GET /", "GET /health", "GET /classes", "POST /predict", "POST /predict/image", "POST /ocr"],
     }), 404
 
 
@@ -638,6 +790,7 @@ def main() -> int:
     print(f"  健康检查 GET  /health")
     print(f"  检测接口 POST /predict   (multipart file / raw image / JSON image_base64)")
     print(f"  标注图   POST /predict/image")
+    print(f"  OCR      POST /ocr        (JSON 数组，字段同 macosocr/winocr)")
     print("\nCtrl-C 停止\n")
 
     app.run(host=args.host, port=args.port, threaded=True, debug=False, use_reloader=False)
