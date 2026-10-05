@@ -49,3 +49,5 @@ gen_data/real_customers.png
 gen_data/real_chat.png
 gen_data/assets/._avatars
 gen_data/assets/._icons
+/gen_data/splits_m
+/real_screenshots
