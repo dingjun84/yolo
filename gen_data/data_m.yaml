@@ -1,0 +1,21 @@
+# 7 pages x 100 + search x 300, 90/10 per page. Official yolo26m, not the old ft200 weights.
+path: C:/Users/staff_01/WorkBuddy/yolo/gen_data/splits_m
+train: train/images
+val: val/images
+nc: 15
+names:
+  0: self_avatar
+  1: nav_chat_icon
+  2: nav_contacts_icon
+  3: search_bar
+  4: contact_item
+  5: message_input
+  6: send_button
+  7: conversation_item
+  8: incoming_bubble
+  9: outgoing_bubble
+  10: input_bar
+  11: single_chat
+  12: group_chat
+  13: contact_send_message
+  14: nav_groups_icon

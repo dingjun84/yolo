@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """企业微信桌面 UI 合成：布局、绘制、YOLO 标签框。
 
-纯 Pillow，无网络。类别 ID 必须与父目录 classes.txt 一致（14 类，已移除 message_input）：
+纯 Pillow，无网络。类别 ID 必须与父目录 classes.txt 一致：
   0 self_avatar  1 nav_chat_icon  2 nav_contacts_icon  3 search_bar
-  4 contact_item  5 send_button  6 conversation_item
-  7 incoming_bubble  8 outgoing_bubble  9 input_bar
-  10 single_chat（单聊）  11 group_chat（群聊）
-  12 contact_send_message（联系人详情「发消息」）  13 nav_groups_icon（导航「分组」）
+  4 contact_item  5 message_input  6 send_button  7 conversation_item
+  8 incoming_bubble  9 outgoing_bubble  10 input_bar
+  11 single_chat（单聊）  12 group_chat（群聊）
+  13 contact_send_message（联系人详情「发消息」）
 """
 from __future__ import print_function, division
 import os
@@ -21,17 +21,16 @@ CLS_NAV_CHAT = 1
 CLS_NAV_CONTACTS = 2
 CLS_SEARCH_BAR = 3
 CLS_CONTACT_ITEM = 4
-# message_input 已移除（c14）：输入区无边框、定位时为空，不再标注。
-CLS_SEND_BUTTON = 5
-CLS_CONVERSATION_ITEM = 6
-CLS_INCOMING = 7
-CLS_OUTGOING = 8
-CLS_INPUT_BAR = 9
-CLS_SINGLE_CHAT = 10  # 单聊
-CLS_GROUP_CHAT = 11  # 群聊
-CLS_CONTACT_SEND_MESSAGE = 12  # 联系人详情「发消息」
-CLS_NAV_GROUPS = 13  # 导航「分组」图标
-NUM_CLASSES = 14  # 导航「分组」图标
+CLS_MESSAGE_INPUT = 5
+CLS_SEND_BUTTON = 6
+CLS_CONVERSATION_ITEM = 7
+CLS_INCOMING = 8
+CLS_OUTGOING = 9
+CLS_INPUT_BAR = 10
+CLS_SINGLE_CHAT = 11  # 单聊
+CLS_GROUP_CHAT = 12  # 群聊
+CLS_CONTACT_SEND_MESSAGE = 13  # 联系人详情「发消息」
+CLS_NAV_GROUPS = 14  # 导航「分组」图标
 
 # ---------------------------------------------------------------------------
 # 配色（对齐官方「应用深色模式色值表」+ 桌面截图校准）
@@ -249,73 +248,6 @@ def _load_icon(icons_dir, name, size):
         im = Image.new('RGBA', (size, size), (0, 0, 0, 0))
         return im
     im = Image.open(path).convert('RGBA')
-    return im.resize((size, size), Image.LANCZOS)
-
-
-
-def _toolbar_icon(kind, size, color):
-    """聊天输入区工具栏线性图标（4x 超采样绘制后缩小），对照真实截图的样式。"""
-    S = 4
-    n = size * S
-    im = Image.new('RGBA', (n, n), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    c = tuple(color) + (255,)
-    w = max(4, int(round(1.35 * S)))
-    m = int(n * 0.10)
-    if kind == 'emoji':
-        d.ellipse([m, m, n - m, n - m], outline=c, width=w)
-        er = int(n * 0.05)
-        for ex in (0.37, 0.63):
-            d.ellipse([n * ex - er, n * 0.40 - er, n * ex + er, n * 0.40 + er], fill=c)
-        d.arc([n * 0.30, n * 0.36, n * 0.70, n * 0.72], 20, 160, fill=c, width=w)
-    elif kind == 'scissors':
-        r = int(n * 0.14)
-        for cx in (0.30, 0.70):
-            d.ellipse([n * cx - r, n * 0.76 - r, n * cx + r, n * 0.76 + r], outline=c, width=w)
-        d.line([(n * 0.36, n * 0.64), (n * 0.72, n * 0.12)], fill=c, width=w)
-        d.line([(n * 0.64, n * 0.64), (n * 0.28, n * 0.12)], fill=c, width=w)
-    elif kind == 'image':
-        d.rounded_rectangle([m, n * 0.18, n - m, n * 0.82], radius=n * 0.08, outline=c, width=w)
-        d.line([(m + w, n * 0.70), (n * 0.38, n * 0.44), (n * 0.56, n * 0.62), (n * 0.68, n * 0.52),
-                (n - m - w, n * 0.70)], fill=c, width=w, joint='curve')
-    elif kind == 'doc':
-        d.rounded_rectangle([n * 0.20, m, n * 0.80, n - m], radius=n * 0.08, outline=c, width=w)
-        for yy in (0.34, 0.50, 0.66):
-            d.line([(n * 0.33, n * yy), (n * (0.67 if yy < 0.6 else 0.55), n * yy)], fill=c, width=w)
-    elif kind == 'calendar':
-        d.rounded_rectangle([m, n * 0.18, n - m, n - m], radius=n * 0.10, outline=c, width=w)
-        for xx in (0.32, 0.68):
-            d.line([(n * xx, n * 0.08), (n * xx, n * 0.26)], fill=c, width=w)
-        d.line([(n * 0.32, n * 0.56), (n * 0.46, n * 0.70), (n * 0.70, n * 0.44)], fill=c, width=w)
-    elif kind == 'folder':
-        d.line([(m, n * 0.28), (n * 0.40, n * 0.28), (n * 0.48, n * 0.38), (n - m, n * 0.38)], fill=c, width=w)
-        d.rounded_rectangle([m, n * 0.28, n - m, n * 0.82], radius=n * 0.08, outline=c, width=w)
-        d.line([(m, n * 0.46), (n - m, n * 0.46)], fill=c, width=w)
-    elif kind == 'phone':
-        d.arc([n * 0.14, n * 0.14, n * 1.38, n * 1.38], 180, 270, fill=c, width=w)
-        d.rounded_rectangle([n * 0.10, n * 0.62, n * 0.34, n * 0.90], radius=n * 0.07, outline=c, width=w)
-        d.rounded_rectangle([n * 0.62, n * 0.10, n * 0.90, n * 0.34], radius=n * 0.07, outline=c, width=w)
-    elif kind == 'yen':
-        d.polygon([(n * 0.20, n * 0.14), (n * 0.80, n * 0.14), (n * 0.80, n * 0.58), (n * 0.50, n * 0.90),
-                   (n * 0.20, n * 0.58)], outline=c, width=w)
-        d.line([(n * 0.36, n * 0.30), (n * 0.50, n * 0.48), (n * 0.64, n * 0.30)], fill=c, width=w)
-        d.line([(n * 0.50, n * 0.48), (n * 0.50, n * 0.74)], fill=c, width=w)
-        d.line([(n * 0.38, n * 0.54), (n * 0.62, n * 0.54)], fill=c, width=w)
-    elif kind == 'grid':
-        q = n * 0.30
-        for (gx, gy) in ((0.14, 0.14), (0.56, 0.14), (0.14, 0.56)):
-            d.rounded_rectangle([n * gx, n * gy, n * gx + q, n * gy + q], radius=n * 0.05, outline=c, width=w)
-        d.line([(n * 0.56, n * 0.62), (n * 0.88, n * 0.62)], fill=c, width=w)
-        d.line([(n * 0.56, n * 0.78), (n * 0.88, n * 0.78)], fill=c, width=w)
-    elif kind == 'chatsearch':
-        d.ellipse([m, m, n * 0.80, n * 0.76], outline=c, width=w)
-        for dx in (0.30, 0.45, 0.60):
-            r = n * 0.04
-            d.ellipse([n * dx - r, n * 0.43 - r, n * dx + r, n * 0.43 + r], fill=c)
-        d.ellipse([n * 0.60, n * 0.60, n * 0.84, n * 0.84], fill=(255, 255, 255, 0), outline=c, width=w)
-        d.line([(n * 0.82, n * 0.82), (n * 0.94, n * 0.94)], fill=c, width=w)
-    else:
-        d.rounded_rectangle([m, m, n - m, n - m], radius=n * 0.12, outline=c, width=w)
     return im.resize((size, size), Image.LANCZOS)
 
 
@@ -1613,129 +1545,53 @@ class WeComSynthesizer(object):
         if show_wx:
             draw.text((x0 + 16 + tw + 4, ty), wx_tag, fill=C_WECHAT_GREEN, font=self.font_title)
 
-        # bottom input panel —— 对照真实截图：聊天底色上内嵌一块白色圆角卡片
-        # （边缘只有极淡的 1px，与卡片本身几乎同色），顶部一行工具栏图标，
-        # 下面是无边框的空白输入区，右下角「发送(S)」只是灰字（永远灰，不会变蓝）：
-        # 空输入时浅灰，有文字时稍深的灰。
-        rng = self.rng
-        margin = rng.randint(14, 18)
-        panel_h = rng.randint(128, 150)
-        px0, px1 = x0 + margin, W - margin
-        py1 = H - margin
-        py0 = py1 - panel_h
-        if dark:
-            panel_fill, panel_edge = C_DARK_INPUT, (44, 46, 50)
-        else:
-            panel_fill, panel_edge = C_INPUT_AREA, (230, 231, 232)
-        draw.rounded_rectangle([px0, py0, px1, py1], radius=rng.choice([6, 7, 8]),
-                               fill=panel_fill,
-                               outline=panel_edge if rng.random() < 0.85 else None)
+        # bottom input region
+        input_bar_h = 36
+        msg_input_h = int(H * self.rng.uniform(0.10, 0.16))
+        msg_input_h = max(70, min(140, msg_input_h))
+        send_h = 28
+        send_w = 64
+        bottom_pad = 10
 
-        # toolbar row (emoji / scissors / image / ...) at the top of the panel
-        icon_sz = rng.choice([20, 21, 22])
-        tb_cy = py0 + rng.randint(19, 23)
-        iy = tb_cy - icon_sz // 2
-        step = rng.randint(38, 46)
-        # 真实工具栏：表情 / 截图▾ / 图片▾ / 文档 / 日程▾ / 文件夹▾ / [电话▾ / ¥] / 应用 / 聊天记录
-        tb_kinds = [('emoji', False), ('scissors', True), ('image', True), ('doc', False),
-                    ('calendar', True), ('folder', True)]
-        if rng.random() < 0.55:
-            tb_kinds += [('phone', True), ('yen', False)]
-        tb_kinds += [('grid', False), ('chatsearch', False)]
-        icon_c = (205, 208, 214) if dark else (rng.randint(60, 80),) * 3
-        car_c = (190, 194, 200) if dark else (90, 94, 100)
-        tb_x0 = px0 + rng.randint(10, 14)
-        ix = tb_x0
-        tb_right = tb_x0
-        for kind, has_caret in tb_kinds:
-            if ix + icon_sz > px1 - 16:
-                break
-            ic = _toolbar_icon(kind, icon_sz, icon_c)
+        input_area_top = H - msg_input_h - input_bar_h
+        ib_y0 = input_area_top
+        ib_y1 = ib_y0 + input_bar_h
+        draw.rectangle([x0, ib_y0, W, H], fill=input_bg)
+        draw.line([(x0, ib_y0), (W, ib_y0)], fill=sep_c)
+
+        ibar_names = ['ibar_emoji.png', 'ibar_scissors.png', 'ibar_image.png',
+                      'ibar_folder.png', 'ibar_cloud.png', 'ibar_phone.png', 'ibar_more.png']
+        ix = x0 + 12
+        iy = ib_y0 + (input_bar_h - 22) // 2
+        for nm in ibar_names:
+            ic = _load_icon(self.icons_dir, nm, 22)
             _paste_rgba(img, ic, (ix, iy))
-            tb_right = ix + icon_sz
-            if has_caret:
-                cx_ = ix + icon_sz + 4
-                draw.polygon([(cx_, tb_cy - 1), (cx_ + 6, tb_cy - 1), (cx_ + 3, tb_cy + 2)], fill=car_c)
-                tb_right = cx_ + 6
-            ix += step
-        # 右侧「快速会议」+ 侧栏按钮（窗口够宽时才有）
-        qm = u'快速会议'
-        qtw, qth = _text_size(draw, qm, self.font_md)
-        right_items_w = qtw + 24 + 44
-        if px1 - tb_right > right_items_w + 40 and rng.random() < 0.85:
-            sb_icon_x1 = px1 - 12
-            sb_icon_x0 = sb_icon_x1 - 15
-            draw.rectangle([sb_icon_x0, tb_cy - 7, sb_icon_x1, tb_cy + 7],
-                           outline=(200, 204, 210) if dark else (70, 74, 80))
-            draw.line([(sb_icon_x1 - 5, tb_cy - 7), (sb_icon_x1 - 5, tb_cy + 7)],
-                      fill=(200, 204, 210) if dark else (70, 74, 80))
-            qx = sb_icon_x0 - 18 - qtw
-            draw.text((qx, tb_cy - qth // 2 - 2), qm, fill=text_c, font=self.font_md)
-            # 闪电图标（简笔）
-            lx = qx - 16
-            draw.line([(lx + 7, tb_cy - 8), (lx + 2, tb_cy + 1), (lx + 8, tb_cy - 1), (lx + 3, tb_cy + 8)],
-                      fill=(200, 204, 210) if dark else (70, 74, 80), width=1)
-        # input_bar = 整条工具栏行：从第一个图标左边到卡片右边（含右侧快速会议/侧栏按钮区域）
-        ib_x0 = tb_x0 - 4
-        ib_x1 = px1 - 6
-        ib_y0 = tb_cy - icon_sz // 2 - 5
-        ib_y1 = tb_cy + (icon_sz + 1) // 2 + 5
-        labels.append((CLS_INPUT_BAR, ib_x0, ib_y0, ib_x1, ib_y1))
+            ix += 30
+        qm = '快速会议'
+        qtw, qth = _text_size(draw, qm, self.font_sm)
+        draw.text((W - qtw - 40, ib_y0 + (input_bar_h - qth) // 2), qm, fill=text_sec, font=self.font_sm)
 
-        # 输入区：~60% 空（定位时的常态），~40% 有 1-3 行随机中英文
-        typed = sc.get('input_typed')
-        if typed is None:
-            typed = rng.random() < 0.40
-        sc['input_typed'] = bool(typed)
-        if typed:
-            n_lines = rng.choice([1, 1, 2, 3])
-            ty = ib_y1 + rng.randint(6, 12)
-            max_tw = (px1 - 16) - (px0 + 12) - 20
-            for _li in range(n_lines):
-                r = rng.random()
-                if r < 0.45:
-                    t = rng.choice(self.messages)
-                elif r < 0.75:
-                    t = rng.choice(self.snippets)
-                else:
-                    words = ['ok', 'hello', 'meeting', 'tomorrow', 'please', 'check', 'the', 'file',
-                             'thanks', 'send', 'price', 'order', 'link', 'https://www.example.com',
-                             'YOLO', 'test', '10:30', 'ASAP', 'sure', 'no problem']
-                    t = ' '.join(rng.choice(words) for _ in range(rng.randint(2, 8)))
-                t = t.replace('\n', ' ').strip() or u'你好'
-                t = _truncate(draw, t, self.font_nm, max_tw, ellipsis='')
-                if ty + 18 > py1 - 30:
-                    break
-                draw.text((px0 + 12, ty), t, fill=text_c, font=self.font_nm)
-                ty += rng.randint(19, 22)
+        labels.append((CLS_INPUT_BAR, x0 + 8, ib_y0 + 4, x0 + 8 + 30 * len(ibar_names), ib_y1 - 4))
 
-        # 发送(S)：纯灰字，无蓝色；标签只框按钮本身（文字 + 少量内边距）
-        st = u'发送(S)'
-        if dark:
-            s_fg = ((140 + rng.randint(-8, 8),) * 3) if typed else ((78 + rng.randint(-6, 6),) * 3)
-        else:
-            if typed:
-                g = rng.randint(104, 130)
-                s_fg = (g, g + 4, g + 9)
-            else:
-                g = rng.randint(194, 206)
-                s_fg = (g, g + 2, g + 3)
-        s_right = px1 - rng.randint(8, 12)
-        s_bottom = py1 - rng.randint(9, 13)
-        try:
-            bb = draw.textbbox((s_right, s_bottom), st, font=self.font_md, anchor='rd')
-        except Exception:
-            stw, sth = _text_size(draw, st, self.font_md)
-            bb = (s_right - stw, s_bottom - sth, s_right, s_bottom)
-        try:
-            draw.text((s_right, s_bottom), st, fill=s_fg, font=self.font_md, anchor='rd')
-        except Exception:
-            draw.text((bb[0], bb[1]), st, fill=s_fg, font=self.font_md)
-        pad_x, pad_y = 5, 4
-        labels.append((CLS_SEND_BUTTON, bb[0] - pad_x, bb[1] - pad_y, bb[2] + pad_x, bb[3] + pad_y))
+        mi_y0 = ib_y1
+        labels.append((CLS_MESSAGE_INPUT, x0 + 8, mi_y0 + 4, W - 8, H - 8))
+
+        sb_x1 = W - 16
+        sb_x0 = sb_x1 - send_w
+        sb_y1 = H - bottom_pad
+        sb_y0 = sb_y1 - send_h
+        send_active = sc.get('send_active', self.rng.random() < 0.25)
+        s_bg = C_SEND_BG_ACTIVE if send_active else (C_DARK_SEARCH_BG if dark else C_SEND_BG)
+        s_fg = C_SEND_TEXT_ACTIVE if send_active else text_sec
+        draw.rounded_rectangle([sb_x0, sb_y0, sb_x1, sb_y1], radius=4, fill=s_bg)
+        st = '发送(S)'
+        stw, sth = _text_size(draw, st, self.font_sm)
+        draw.text((sb_x0 + (send_w - stw) / 2, sb_y0 + (send_h - sth) / 2 - 1),
+                  st, fill=s_fg, font=self.font_sm)
+        labels.append((CLS_SEND_BUTTON, sb_x0, sb_y0, sb_x1, sb_y1))
 
         msg_top = title_h
-        msg_bot = py0 - 6
+        msg_bot = ib_y0
         viewport = (x0, msg_top, W, msg_bot)
 
         mode = sc['msg_mode']

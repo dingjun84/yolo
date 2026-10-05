@@ -151,7 +151,6 @@ def main():
     if presets:
         print('  presets (cycle): %s' % ', '.join(presets))
 
-    manifest = []
     for i in range(args.count):
         preset = presets[i % len(presets)] if presets else None
         img, lines, sc = syn.render(preset=preset)
@@ -168,18 +167,11 @@ def main():
             img.save(img_path)
         with open(lbl_path, 'w') as f:
             f.write('\n'.join(lines) + ('\n' if lines else ''))
-        manifest.append((stem, preset or '-', sc['page'], sc.get('input_typed')))
         if (i + 1) % 10 == 0 or i == 0 or i == args.count - 1 or presets:
             print('  [%d/%d] %s  %dx%d  labels=%d  page=%s nav=%s preset=%s' % (
                 i + 1, args.count, stem, sc['w'], sc['h'], len(lines),
                 sc['page'], 'wide' if sc['nav_wide'] else 'narrow',
                 sc.get('preset') or preset or '-'))
-
-    # 每图场景清单（chat 页记录输入区是否有文字）
-    with open(os.path.join(out_root, 'manifest.csv'), 'w') as f:
-        f.write('stem,preset,page,input_typed\n')
-        for row in manifest:
-            f.write('%s,%s,%s,%s\n' % row)
 
     # per-class label report (YOLO 框数量)
     from collections import Counter

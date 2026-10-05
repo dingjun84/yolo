@@ -1,0 +1,21 @@
+# c14: message_input removed (ids after it shifted down by 1). 7 pages x 100 + search x 300, 90/10 per page.
+# Train from official Ultralytics yolo26s.pt.
+path: C:/Users/staff_01/WorkBuddy/yolo/gen_data/splits_c14
+train: train/images
+val: val/images
+nc: 14
+names:
+  0: self_avatar
+  1: nav_chat_icon
+  2: nav_contacts_icon
+  3: search_bar
+  4: contact_item
+  5: send_button
+  6: conversation_item
+  7: incoming_bubble
+  8: outgoing_bubble
+  9: input_bar
+  10: single_chat
+  11: group_chat
+  12: contact_send_message
+  13: nav_groups_icon

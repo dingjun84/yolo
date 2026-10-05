@@ -3,6 +3,7 @@ nav_chat_icon
 nav_contacts_icon
 search_bar
 contact_item
+message_input
 send_button
 conversation_item
 incoming_bubble
