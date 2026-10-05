@@ -151,12 +151,13 @@ curl http://192.168.1.22:8080/classes
 
 ```json
 {
-  "nc": 11,
+  "nc": 14,
   "classes": {
     "0": "self_avatar", "1": "nav_chat_icon", "2": "nav_contacts_icon",
-    "3": "search_bar", "4": "contact_item", "5": "message_input",
-    "6": "send_button", "7": "conversation_item", "8": "incoming_bubble",
-    "9": "outgoing_bubble", "10": "input_bar"
+    "3": "search_bar", "4": "contact_item", "5": "send_button",
+    "6": "conversation_item", "7": "incoming_bubble", "8": "outgoing_bubble",
+    "9": "input_bar", "10": "single_chat", "11": "group_chat",
+    "12": "contact_send_message", "13": "nav_groups_icon"
   }
 }
 ```
@@ -258,7 +259,7 @@ curl -X POST -F "file=@shot.png" \
 | `class_counts` | object | 类别名 → 数量 |
 | `speed_ms` | object | `preprocess` / `inference` / `postprocess`，单位毫秒 |
 | `detections` | array | 检测框列表，**按 `conf` 降序** |
-| `detections[].class_id` | int | 类别 id，0–10（附带信息，展示请用 `class_name`） |
+| `detections[].class_id` | int | 类别 id，0–13（附带信息，展示请用 `class_name`） |
 | `detections[].class_name` | string | **类别名，即标签**，如 `"conversation_item"` |
 | `detections[].conf` | float | 置信度，保留 4 位 |
 | `detections[].xyxy` | [float×4] | 左上角 + 右下角，`[x1, y1, x2, y2]` |
@@ -329,12 +330,15 @@ else:
 | 2 | `nav_contacts_icon` | 导航栏「通讯录」图标 |
 | 3 | `search_bar` | 搜索框 |
 | 4 | `contact_item` | 通讯录里的联系人条目（列表中的一行） |
-| 5 | `message_input` | 消息输入框（文本编辑区） |
-| 6 | `send_button` | 发送按钮 |
-| 7 | `conversation_item` | 会话列表里的会话条目（列表中的一行） |
-| 8 | `incoming_bubble` | 接收的消息气泡 |
-| 9 | `outgoing_bubble` | 发送的消息气泡 |
-| 10 | `input_bar` | 底部输入区（含表情/附件按钮的整体） |
+| 5 | `send_button` | 发送按钮（输入卡片右下「发送(S)」灰字） |
+| 6 | `conversation_item` | 会话列表里的会话条目（列表中的一行） |
+| 7 | `incoming_bubble` | 接收的消息气泡 |
+| 8 | `outgoing_bubble` | 发送的消息气泡 |
+| 9 | `input_bar` | 输入区上方工具条整行（表情/附件等，不含白色文字区） |
+| 10 | `single_chat` | 分组面板里的单聊图标 |
+| 11 | `group_chat` | 分组面板里的群聊图标 |
+| 12 | `contact_send_message` | 联系人详情「发消息」 |
+| 13 | `nav_groups_icon` | 导航栏「分组」图标 |
 
 > 类别 id 与训练数据严格绑定，顺序不可调整。
 >

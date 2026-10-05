@@ -15,7 +15,6 @@ DEFAULT_NAMES = [
     "nav_contacts_icon",
     "search_bar",
     "contact_item",
-    "message_input",
     "send_button",
     "conversation_item",
     "incoming_bubble",
@@ -51,11 +50,11 @@ def main() -> int:
     from ultralytics import YOLO
 
     model = YOLO(args.model)
-    names = DEFAULT_NAMES
-    # Prefer model names if they look like our 15-class set
-    if isinstance(model.names, dict) and len(model.names) == 15:
-        names = [model.names[i] for i in range(15)]
-    elif isinstance(model.names, (list, tuple)) and len(model.names) == 15:
+    names = list(DEFAULT_NAMES)
+    # Prefer model.names whenever available (14-class or otherwise)
+    if isinstance(model.names, dict) and model.names:
+        names = [model.names[i] for i in sorted(int(k) for k in model.names.keys())]
+    elif isinstance(model.names, (list, tuple)) and model.names:
         names = list(model.names)
 
     (src / "classes.txt").write_text("\n".join(names) + "\n", encoding="utf-8")

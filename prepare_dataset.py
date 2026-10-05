@@ -58,19 +58,22 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-# 类别表（0-10，与两个数据集的既有标注严格对应，顺序不可改）
+# 类别表（14 类，0-13，与 classes.txt / server.py 一致，顺序不可改）
 CLASSES = [
-    "self_avatar",        # 0
-    "nav_chat_icon",      # 1
-    "nav_contacts_icon",  # 2
-    "search_bar",         # 3
-    "contact_item",       # 4
-    "message_input",      # 5
-    "send_button",        # 6
-    "conversation_item",  # 7
-    "incoming_bubble",    # 8
-    "outgoing_bubble",    # 9
-    "input_bar",          # 10
+    "self_avatar",
+    "nav_chat_icon",
+    "nav_contacts_icon",
+    "search_bar",
+    "contact_item",
+    "send_button",
+    "conversation_item",
+    "incoming_bubble",
+    "outgoing_bubble",
+    "input_bar",
+    "single_chat",
+    "group_chat",
+    "contact_send_message",
+    "nav_groups_icon",
 ]
 
 

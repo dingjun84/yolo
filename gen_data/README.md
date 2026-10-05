@@ -34,20 +34,19 @@ gen_data/
 | 2 | nav_contacts_icon |
 | 3 | search_bar |
 | 4 | contact_item |
-| 5 | message_input |
-| 6 | send_button |
-| 7 | conversation_item |
-| 8 | incoming_bubble |
-| 9 | outgoing_bubble |
-| 10 | input_bar |
-| 11 | single_chat（单聊） |
-| 12 | group_chat（群聊） |
-| 13 | contact_send_message（联系人详情「发消息」） |
-| 14 | nav_groups_icon（宽栏左下「分组」区标题图标） |
+| 5 | send_button |
+| 6 | conversation_item |
+| 7 | incoming_bubble |
+| 8 | outgoing_bubble |
+| 9 | input_bar（工具条整行，在白色输入区上方） |
+| 10 | single_chat（单聊） |
+| 11 | group_chat（群聊） |
+| 12 | contact_send_message（联系人详情「发消息」） |
+| 13 | nav_groups_icon（宽栏左下「分组」区标题图标） |
 
-会话列表行仍标 `conversation_item`(7)；头像另标 `single_chat`(11) 或 `group_chat`(12)。
-通讯录页右侧详情生成 `contact_send_message`(13)，随机深色/浅色主题。
-宽栏左下的「分组」标题图标标 `nav_groups_icon`(14)；其下 7 项筛选行（未读/@我/单聊/群聊/
+会话列表行仍标 `conversation_item`(6)；头像另标 `single_chat`(10) 或 `group_chat`(11)。
+通讯录页右侧详情生成 `contact_send_message`(12)，随机深色/浅色主题。
+宽栏左下的「分组」标题图标标 `nav_groups_icon`(13)；其下 7 项筛选行（未读/@我/单聊/群聊/
 内部聊天/外部聊天/标记）**不单独出框**，只作为界面上下文。
 
 ## 依赖
@@ -78,7 +77,7 @@ python synthesize.py --count 50 --out out \
 - 框裁剪到可见区域：列表/消息区若因滚动被裁切，**只标可见部分**。
 - 可见高度 &lt; 4px，或面积比 &lt; `5e-5` 的框丢弃。
 - 导航角标（红点/数字/99+ 三点）画在图标上，**仍只出一个 icon 框**（badge 算 occlusion，不单独成类）。
-- `contacts` 场景：中间栏画通讯录行，标 `contact_item`(4)；`chat` 场景标 `conversation_item`(7)。
+- `contacts` 场景：中间栏画通讯录行，标 `contact_item`(4)；`chat` 场景标 `conversation_item`(6)。
 - 选中的「消息」导航高亮蓝底；通讯录页则高亮 contacts。
 
 ## 占位资源 vs 你需要替换的
@@ -211,7 +210,7 @@ alpha 保留、RGB 染成 `C_SELECTED_NAV_FG`）→ ③ 退回 `nav_X.png`。
 3. **search_bar**（不含右侧 + 按钮，或注明是否含）
 4. **input_bar** 左侧图标簇外接矩形（不含「快速会议」）
 5. **send_button** 「发送(S)」
-6. **message_input** 输入空白区
+6. **输入空白区**（由 input_bar 底边与 send_button 左边估计，不再单独出 class）
 7. 一条完整 **conversation_item** 与一条 **contact_item** 的行高
 8. 典型 **incoming_bubble** / **outgoing_bubble**（含圆角 padding）
 9. **single_chat** / **group_chat**：会话列表里头像（单人头像 vs 多人拼贴）

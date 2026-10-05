@@ -76,7 +76,7 @@ MODEL: YOLO | None = None
 MODEL_PATH: str = ""
 CLASS_NAMES: dict[int, str] = {}
 
-# 权威类别表：与 15 类训练配置严格一一对应。
+# 权威类别表：与 14 类训练配置严格一一对应（已去掉 message_input）。
 # 接口对外一律返回名称、不返回裸数字 id，这张表保证「数字 -> 名称」这一步永远成立 ——
 # 即使权重被重新导出/裁剪掉内嵌 names，也不会退化成返回 "7" 这种数字。
 #
@@ -87,16 +87,15 @@ CLASS_NAMES_CANONICAL: dict[int, str] = {
     2: "nav_contacts_icon",        # 导航栏「通讯录」图标
     3: "search_bar",               # 搜索框
     4: "contact_item",             # 通讯录中的联系人条目（列表中的一行）
-    5: "message_input",            # 消息输入框（文本编辑区）
-    6: "send_button",              # 发送按钮
-    7: "conversation_item",        # 会话列表中的会话条目（列表中的一行）
-    8: "incoming_bubble",          # 接收的消息气泡
-    9: "outgoing_bubble",          # 发送的消息气泡
-    10: "input_bar",               # 底部输入区（含表情/附件等按钮的整体）
-    11: "single_chat",             # 分组面板里的单聊图标
-    12: "group_chat",              # 分组面板里的群聊图标
-    13: "contact_send_message",    # 联系人详情「发消息」
-    14: "nav_groups_icon",         # 导航栏「分组」图标
+    5: "send_button",              # 发送按钮
+    6: "conversation_item",        # 会话列表中的会话条目（列表中的一行）
+    7: "incoming_bubble",          # 接收的消息气泡
+    8: "outgoing_bubble",          # 发送的消息气泡
+    9: "input_bar",                # 工具条整行（表情/附件等，在白色输入区上方）
+    10: "single_chat",             # 分组面板里的单聊图标
+    11: "group_chat",              # 分组面板里的群聊图标
+    12: "contact_send_message",    # 联系人详情「发消息」
+    13: "nav_groups_icon",         # 导航栏「分组」图标
 }
 
 # imgsz=1280 必须与训练分辨率一致（runs/train/wxwork_ui/args.yaml: imgsz=1280），
