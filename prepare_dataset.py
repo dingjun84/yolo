@@ -58,15 +58,15 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-# 类别表（14 类，0-13，与 classes.txt / server.py 一致，顺序不可改）
+# 类别表（13 类 c13，0-12，与 classes.txt / server.py 一致，顺序不可改）。
+# 源标注若还是旧 14 类，先用 tools/remap_14_to_13.py 转成 c13 再跑本脚本。
 CLASSES = [
     "self_avatar",
     "nav_chat_icon",
     "nav_contacts_icon",
     "search_bar",
-    "contact_item",
+    "list_item",  # c13：合并了旧 contact_item(4) / conversation_item(6)
     "send_button",
-    "conversation_item",
     "incoming_bubble",
     "outgoing_bubble",
     "input_bar",

@@ -1,0 +1,22 @@
+# c13: conversation_item + contact_item merged into list_item (id 4); ids after old 6 shifted down by 1.
+# old14 -> new13: 0-5 same, 6->4, 7..13 -> 6..12  (tools/remap_14_to_13.py)
+# Generate: python synthesize.py --out out_c13 ...; split: python split_c13.py (out_c13 -> splits_c13, 90/10 per preset)
+# Or convert existing c14 data: python ../tools/remap_14_to_13.py --apply --src splits_c14 --out splits_c13 --yaml data_c13.yaml
+path: C:/Users/staff_01/WorkBuddy/yolo/gen_data/splits_c13
+train: train/images
+val: val/images
+nc: 13
+names:
+  0: self_avatar
+  1: nav_chat_icon
+  2: nav_contacts_icon
+  3: search_bar
+  4: list_item
+  5: send_button
+  6: incoming_bubble
+  7: outgoing_bubble
+  8: input_bar
+  9: single_chat
+  10: group_chat
+  11: contact_send_message
+  12: nav_groups_icon

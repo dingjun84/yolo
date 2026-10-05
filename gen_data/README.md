@@ -12,7 +12,7 @@ gen_data/
   synthesize.py          # CLI 入口
   wecom_ui.py            # 布局 / 绘制 / 标签框
   export_wework_icons.py # 从本机企微客户端 Assets.car 导出真图标（nav / grp 两套预设）
-  classes.txt            # 与父目录一致的 14 类（含单聊/群聊/详情发消息）
+  classes.txt            # 与父目录一致的 13 类 c13（list_item 合并了会话行/联系人行）
   config.example.yaml
   requirements.txt       # pillow, pyyaml(可选)
   assets/
@@ -33,20 +33,23 @@ gen_data/
 | 1 | nav_chat_icon |
 | 2 | nav_contacts_icon |
 | 3 | search_bar |
-| 4 | contact_item |
+| 4 | list_item（会话列表行 / 通讯录行 / 搜索结果行 / 客户行） |
 | 5 | send_button |
-| 6 | conversation_item |
-| 7 | incoming_bubble |
-| 8 | outgoing_bubble |
-| 9 | input_bar（工具条整行，在白色输入区上方） |
-| 10 | single_chat（单聊） |
-| 11 | group_chat（群聊） |
-| 12 | contact_send_message（联系人详情「发消息」） |
-| 13 | nav_groups_icon（宽栏左下「分组」区标题图标） |
+| 6 | incoming_bubble |
+| 7 | outgoing_bubble |
+| 8 | input_bar（工具条整行，在白色输入区上方） |
+| 9 | single_chat（单聊） |
+| 10 | group_chat（群聊） |
+| 11 | contact_send_message（联系人详情「发消息」） |
+| 12 | nav_groups_icon（宽栏左下「分组」区标题图标） |
 
-会话列表行仍标 `conversation_item`(6)；头像另标 `single_chat`(10) 或 `group_chat`(11)。
-通讯录页右侧详情生成 `contact_send_message`(12)，随机深色/浅色主题。
-宽栏左下的「分组」标题图标标 `nav_groups_icon`(13)；其下 7 项筛选行（未读/@我/单聊/群聊/
+**c13（当前）**：旧 14 类里的 `contact_item`(4) 和 `conversation_item`(6) 外观几乎一样，模型分不清
+（contact_item 置信度常 <0.4），已合并为 `list_item`(4)。是会话还是联系人由 llm_rpa 按所在页面决定。
+旧 14 类标签用 `../tools/remap_14_to_13.py` 转换（old→new：0-5 不变，6→4，7..13→6..12）。
+
+会话列表行标 `list_item`(4)；头像另标 `single_chat`(9) 或 `group_chat`(10)。
+通讯录页右侧详情生成 `contact_send_message`(11)，随机深色/浅色主题。
+宽栏左下的「分组」标题图标标 `nav_groups_icon`(12)；其下 7 项筛选行（未读/@我/单聊/群聊/
 内部聊天/外部聊天/标记）**不单独出框**，只作为界面上下文。
 
 ## 依赖
@@ -60,7 +63,7 @@ pip install -r requirements.txt
 ## 运行
 
 ```bash
-python synthesize.py --count 50 --out out \
+python synthesize.py --count 50 --out out_c13 \
   --avatars assets/avatars --icons assets/icons \
   --names assets/names.txt --messages assets/messages.txt \
   --snippets assets/snippets.txt --seed 0
@@ -68,16 +71,19 @@ python synthesize.py --count 50 --out out \
 
 输出：
 
-- `out/images/wxsyn_00000.jpg` …
-- `out/labels/wxsyn_00000.txt` …（YOLO：`class xc yc w h`，相对整图 0–1）
-- `out/data_synth.yaml`
+- `out_c13/wxsyn_00000.jpg` …
+- `out_c13/wxsyn_00000.txt` …（YOLO：`class xc yc w h`，相对整图 0–1）
+- `out_c13/data_synth.yaml`
+
+切分：`python split_c13.py`（`out_c13` → `splits_c13`，每个 preset 90/10），训练用 `data_c13.yaml`。
+旧的 `out_c14` / `splits_c14` / `data_c14.yaml` / `split_c14.py` 保留不动，仅对应旧 14 类。
 
 ## 标签与遮挡规则
 
 - 框裁剪到可见区域：列表/消息区若因滚动被裁切，**只标可见部分**。
 - 可见高度 &lt; 4px，或面积比 &lt; `5e-5` 的框丢弃。
 - 导航角标（红点/数字/99+ 三点）画在图标上，**仍只出一个 icon 框**（badge 算 occlusion，不单独成类）。
-- `contacts` 场景：中间栏画通讯录行，标 `contact_item`(4)；`chat` 场景标 `conversation_item`(6)。
+- `contacts` 场景的通讯录行、`chat` 场景的会话行、搜索结果行、客户行一律标 `list_item`(4)。
 - 选中的「消息」导航高亮蓝底；通讯录页则高亮 contacts。
 
 ## 占位资源 vs 你需要替换的
@@ -211,7 +217,7 @@ alpha 保留、RGB 染成 `C_SELECTED_NAV_FG`）→ ③ 退回 `nav_X.png`。
 4. **input_bar** 左侧图标簇外接矩形（不含「快速会议」）
 5. **send_button** 「发送(S)」
 6. **输入空白区**（由 input_bar 底边与 send_button 左边估计，不再单独出 class）
-7. 一条完整 **conversation_item** 与一条 **contact_item** 的行高
+7. 一条完整会话行与一条联系人行（都是 **list_item**）的行高
 8. 典型 **incoming_bubble** / **outgoing_bubble**（含圆角 padding）
 9. **single_chat** / **group_chat**：会话列表里头像（单人头像 vs 多人拼贴）
 
@@ -225,7 +231,7 @@ alpha 保留、RGB 染成 `C_SELECTED_NAV_FG`）→ ③ 退回 `nav_X.png`。
 |--------|------|
 | `chat_narrow` | 窄图标导航 + 会话列表 + 气泡聊天 + input_bar/send；角标贴图标右上角 |
 | `chat_wide` | 宽导航（图标+文字）；数字角标靠行尾，红点仍贴图标右上 |
-| `contacts_profile` | 通讯录选中 + contact_item 列表 + 右侧资料卡「发消息」(cls 13)，浅色 |
+| `contacts_profile` | 通讯录选中 + list_item 列表 + 右侧资料卡「发消息」(cls 11)，浅色 |
 | `contacts_profile_dark` | 同上，右侧资料卡深色（发消息用 `#338CFF`） |
 
 ```bash

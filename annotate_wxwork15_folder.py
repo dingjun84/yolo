@@ -14,9 +14,8 @@ DEFAULT_NAMES = [
     "nav_chat_icon",
     "nav_contacts_icon",
     "search_bar",
-    "contact_item",
+    "list_item",  # c13：合并了旧 contact_item(4) / conversation_item(6)
     "send_button",
-    "conversation_item",
     "incoming_bubble",
     "outgoing_bubble",
     "input_bar",
@@ -51,7 +50,8 @@ def main() -> int:
 
     model = YOLO(args.model)
     names = list(DEFAULT_NAMES)
-    # Prefer model.names whenever available (14-class or otherwise)
+    # Prefer model.names whenever available (13-class c13, legacy 14-class, or otherwise);
+    # DEFAULT_NAMES (c13) is only a fallback for weights without embedded names.
     if isinstance(model.names, dict) and model.names:
         names = [model.names[i] for i in sorted(int(k) for k in model.names.keys())]
     elif isinstance(model.names, (list, tuple)) and model.names:

@@ -124,8 +124,10 @@ curl http://192.168.1.22:8080/health
 {
   "status": "ok",
   "model": "/Users/admin/Desktop/workspace/yolo26/weights/yolo26n_detect_wxwork.pt",
-  "nc": 11,
+  "nc": 13,
   "classes": {"0": "self_avatar", "1": "nav_chat_icon", "...": "..."},
+  "schema": "c13",
+  "list_item_aliases": ["contact_item", "conversation_item", "list_item"],
   "device": "cpu",
   "torch": "2.13.0",
   "defaults": {"conf": 0.25, "iou": 0.7, "imgsz": 1280, "max_det": 300},
@@ -138,7 +140,9 @@ curl http://192.168.1.22:8080/health
 | --- | --- | --- |
 | `status` | string | `ok` = 就绪；`loading` = 模型还没加载完 |
 | `nc` | int | 类别数 |
-| `classes` | object | id → 类别名 |
+| `classes` | object | id → 类别名（取自当前权重） |
+| `schema` | string | `c13`（13 类新权重）/ `c14`（旧 14 类权重）/ `custom` |
+| `list_item_aliases` | array | 会被 `logical_name` 统一成 `list_item` 的类别名 |
 | `defaults` | object | 服务端默认推理参数 |
 
 ---
@@ -151,15 +155,21 @@ curl http://192.168.1.22:8080/classes
 
 ```json
 {
-  "nc": 14,
+  "nc": 13,
   "classes": {
     "0": "self_avatar", "1": "nav_chat_icon", "2": "nav_contacts_icon",
-    "3": "search_bar", "4": "contact_item", "5": "send_button",
-    "6": "conversation_item", "7": "incoming_bubble", "8": "outgoing_bubble",
-    "9": "input_bar", "10": "single_chat", "11": "group_chat",
-    "12": "contact_send_message", "13": "nav_groups_icon"
-  }
+    "3": "search_bar", "4": "list_item", "5": "send_button",
+    "6": "incoming_bubble", "7": "outgoing_bubble", "8": "input_bar",
+    "9": "single_chat", "10": "group_chat", "11": "contact_send_message",
+    "12": "nav_groups_icon"
+  },
+  "schema": "c13",
+  "list_item_aliases": ["contact_item", "conversation_item", "list_item"]
 }
+```
+
+`classes` 永远是**当前加载的权重**内嵌的类别表：加载旧 14 类权重时这里就是 14 类、
+`schema` 为 `"c14"`；13 类新权重为 `"c13"`；其他为 `"custom"`。
 ```
 
 ---
@@ -227,7 +237,7 @@ curl -X POST -F "file=@shot.png" \
   "params": {"conf": 0.25, "iou": 0.7, "imgsz": 1280, "max_det": 300},
   "count": 9,
   "class_counts": {
-    "conversation_item": 4,
+    "list_item": 4,
     "incoming_bubble": 1,
     "nav_chat_icon": 1,
     "nav_contacts_icon": 1,
@@ -237,8 +247,9 @@ curl -X POST -F "file=@shot.png" \
   "speed_ms": {"preprocess": 15.18, "inference": 348.97, "postprocess": 4.55},
   "detections": [
     {
-      "class_id": 7,
-      "class_name": "conversation_item",
+      "class_id": 4,
+      "class_name": "list_item",
+      "logical_name": "list_item",
       "conf": 0.9637,
       "xyxy": [152.4, 236.1, 709.3, 410.2],
       "xywh": [430.85, 323.13, 556.9, 174.1],
@@ -259,8 +270,9 @@ curl -X POST -F "file=@shot.png" \
 | `class_counts` | object | 类别名 → 数量 |
 | `speed_ms` | object | `preprocess` / `inference` / `postprocess`，单位毫秒 |
 | `detections` | array | 检测框列表，**按 `conf` 降序** |
-| `detections[].class_id` | int | 类别 id，0–13（附带信息，展示请用 `class_name`） |
-| `detections[].class_name` | string | **类别名，即标签**，如 `"conversation_item"` |
+| `detections[].class_id` | int | 类别 id（13 类权重 0–12，旧 14 类权重 0–13；附带信息，展示请用 `class_name`） |
+| `detections[].class_name` | string | **类别名，即标签**，原样取自权重的 `model.names`，如 `"list_item"`（旧权重为 `"conversation_item"` / `"contact_item"`） |
+| `detections[].logical_name` | string | 逻辑类别（**新增字段**）：`list_item` / `conversation_item` / `contact_item` 一律为 `"list_item"`，其余与 `class_name` 相同。调用方按它匹配列表行即可同时兼容新旧权重 |
 | `detections[].conf` | float | 置信度，保留 4 位 |
 | `detections[].xyxy` | [float×4] | 左上角 + 右下角，`[x1, y1, x2, y2]` |
 | `detections[].xywh` | [float×4] | 中心点 + 宽高，`[cx, cy, w, h]` |
@@ -329,23 +341,37 @@ else:
 | 1 | `nav_chat_icon` | 导航栏「消息」图标 |
 | 2 | `nav_contacts_icon` | 导航栏「通讯录」图标 |
 | 3 | `search_bar` | 搜索框 |
-| 4 | `contact_item` | 通讯录里的联系人条目（列表中的一行） |
+| 4 | `list_item` | 列表中的一行：会话列表行 / 通讯录联系人行 / 搜索结果行（是哪一种由调用方按当前页面判断） |
 | 5 | `send_button` | 发送按钮（输入卡片右下「发送(S)」灰字） |
-| 6 | `conversation_item` | 会话列表里的会话条目（列表中的一行） |
-| 7 | `incoming_bubble` | 接收的消息气泡 |
-| 8 | `outgoing_bubble` | 发送的消息气泡 |
-| 9 | `input_bar` | 输入区上方工具条整行（表情/附件等，不含白色文字区） |
-| 10 | `single_chat` | 分组面板里的单聊图标 |
-| 11 | `group_chat` | 分组面板里的群聊图标 |
-| 12 | `contact_send_message` | 联系人详情「发消息」 |
-| 13 | `nav_groups_icon` | 导航栏「分组」图标 |
+| 6 | `incoming_bubble` | 接收的消息气泡 |
+| 7 | `outgoing_bubble` | 发送的消息气泡 |
+| 8 | `input_bar` | 输入区上方工具条整行（表情/附件等，不含白色文字区） |
+| 9 | `single_chat` | 分组面板里的单聊图标 |
+| 10 | `group_chat` | 分组面板里的群聊图标 |
+| 11 | `contact_send_message` | 联系人详情「发消息」 |
+| 12 | `nav_groups_icon` | 导航栏「分组」图标 |
+
+#### 13 类（c13）与旧 14 类（c14）
+
+旧 14 类里 `contact_item`(4) 与 `conversation_item`(6) 外观几乎相同，模型经常混淆（contact_item 置信度 <0.4），
+现合并为 `list_item`(4)。old14 → new13 映射：0–5 不变，6→4，7→6，8→7，9→8，10→9，11→10，12→11，13→12。
+旧标签用 `tools/remap_14_to_13.py` 转换（默认 dry-run，`--apply` 写到新目录 `<src>_c13`，不改原目录）。
+
+兼容策略：
+
+- 服务端**不改写** `class_name` / `class_id` / `class_counts`，它们始终是权重里的真实标签，响应格式不变；
+- 每个检测框新增 `logical_name`，把 `conversation_item` / `contact_item` / `list_item` 统一成 `list_item`；
+- 所以旧 14 类权重和新 13 类权重可以直接互换，调用方用 `logical_name == "list_item"`（或自己做同样的别名判断，
+  llm_rpa 里是 `is_list_item()`）匹配列表行，再按「当前在哪个页面」决定它是会话还是联系人。
+- `/health`、`/classes` 里的 `schema` 字段告诉你当前加载的是 `c13` / `c14` / `custom`。
 
 > 类别 id 与训练数据严格绑定，顺序不可调整。
 >
-> 「id → 名称」的映射在 `server.py` 里以 `CLASS_NAMES_CANONICAL` 常量硬编码了一份，
+> 「id → 名称」的映射在 `server.py` 里以 `CLASS_NAMES_CANONICAL`（13 类）常量硬编码了一份，
 > 作为权威兜底：接口对外只吐名称，即使权重被重新导出、丢掉内嵌的类别表，
 > 也不会退化成返回 `7` 这种数字。启动时会拿权重的内嵌类别表和这份常量对一遍，
 > 不一致会打印警告（并列出差异），但仍以权重内嵌的为准 —— 那是训练时的真实标签。
+> 旧 14 类权重会被识别出来（`CLASS_NAMES_LEGACY_C14`），只打印提示、不算异常。
 
 ---
 

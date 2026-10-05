@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 """企业微信桌面 UI 合成：布局、绘制、YOLO 标签框。
 
-纯 Pillow，无网络。类别 ID 必须与父目录 classes.txt 一致（14 类，已移除 message_input）：
+纯 Pillow，无网络。类别 ID 必须与父目录 classes.txt 一致（13 类 c13）：
   0 self_avatar  1 nav_chat_icon  2 nav_contacts_icon  3 search_bar
-  4 contact_item  5 send_button  6 conversation_item
-  7 incoming_bubble  8 outgoing_bubble  9 input_bar
-  10 single_chat（单聊）  11 group_chat（群聊）
-  12 contact_send_message（联系人详情「发消息」）  13 nav_groups_icon（导航「分组」）
+  4 list_item（会话列表行 / 通讯录行 / 搜索结果行 / 客户行，统一一类）
+  5 send_button  6 incoming_bubble  7 outgoing_bubble  8 input_bar
+  9 single_chat（单聊）  10 group_chat（群聊）
+  11 contact_send_message（联系人详情「发消息」）  12 nav_groups_icon（导航「分组」）
+
+c14 -> c13：conversation_item(6) 与 contact_item(4) 外观几乎一样，模型分不清，
+合并为 list_item(4)；具体是会话还是联系人由 llm_rpa 按所在页面判断。
 """
 from __future__ import print_function, division
 import os
@@ -20,18 +23,20 @@ CLS_SELF_AVATAR = 0
 CLS_NAV_CHAT = 1
 CLS_NAV_CONTACTS = 2
 CLS_SEARCH_BAR = 3
-CLS_CONTACT_ITEM = 4
+# c13：会话行与联系人行合并为 list_item。两个旧名保留为别名，绘制逻辑不用改。
+CLS_LIST_ITEM = 4
+CLS_CONTACT_ITEM = CLS_LIST_ITEM
+CLS_CONVERSATION_ITEM = CLS_LIST_ITEM
 # message_input 已移除（c14）：输入区无边框、定位时为空，不再标注。
 CLS_SEND_BUTTON = 5
-CLS_CONVERSATION_ITEM = 6
-CLS_INCOMING = 7
-CLS_OUTGOING = 8
-CLS_INPUT_BAR = 9
-CLS_SINGLE_CHAT = 10  # 单聊
-CLS_GROUP_CHAT = 11  # 群聊
-CLS_CONTACT_SEND_MESSAGE = 12  # 联系人详情「发消息」
-CLS_NAV_GROUPS = 13  # 导航「分组」图标
-NUM_CLASSES = 14  # 导航「分组」图标
+CLS_INCOMING = 6
+CLS_OUTGOING = 7
+CLS_INPUT_BAR = 8
+CLS_SINGLE_CHAT = 9  # 单聊
+CLS_GROUP_CHAT = 10  # 群聊
+CLS_CONTACT_SEND_MESSAGE = 11  # 联系人详情「发消息」
+CLS_NAV_GROUPS = 12  # 导航「分组」图标
+NUM_CLASSES = 13
 
 # ---------------------------------------------------------------------------
 # 配色（对齐官方「应用深色模式色值表」+ 桌面截图校准）
@@ -672,7 +677,7 @@ class WeComSynthesizer(object):
             # dark already set if contacts_profile_dark
         elif name == 'contacts_search':
             # 通讯录搜索：多数是窄导航 + 一条蓝底结果 + 右侧资料（对照真实截图）。
-            # 仍保留少量多结果和宽导航。每行是 contact_item。
+            # 仍保留少量多结果和宽导航。每行是 list_item。
             w, h = 1100, 740
             if jitter:
                 w = rng.randint(1000, 1400)
@@ -1175,7 +1180,7 @@ class WeComSynthesizer(object):
         """客户页右侧两栏。第三栏是客户列表，第四栏留白。
 
         两栏顶上是同一条标题，竖分隔线从标题下边才开始，标题本身不断开。
-        分组标题和「共N位客户」不打标；每个人是一条 contact_item。
+        分组标题和「共N位客户」不打标；每个人是一条 list_item。
         """
         W, H = sc["w"], sc["h"]
         x0 = sc["nav_w"] + sc["list_w"]
@@ -1234,7 +1239,7 @@ class WeComSynthesizer(object):
                 name = self.rng.choice(self.names)
                 right = self._paint_customer_row(
                     img, x0 + 8, y, max_w, row_h, name, corp, text_c)
-                labels.append((CLS_CONTACT_ITEM, x0 + 8, y, x0 + 8 + right, y + row_h))
+                labels.append((CLS_LIST_ITEM, x0 + 8, y, x0 + 8 + right, y + row_h))
                 y += row_h + 2
                 total += 1
         if total:
@@ -1306,7 +1311,7 @@ class WeComSynthesizer(object):
         # list viewport
         list_top = sy + sh + 8
         list_bot = H
-        # 搜索结果：细字「联系人」标题，本身不是 contact_item
+        # 搜索结果：细字「联系人」标题，本身不是 list_item
         search_hits = sc.get('search_hits')
         if search_hits and sc.get('search_header'):
             draw.text((x0 + 14, list_top + 2), u'联系人', fill=snip_c, font=self.font_sm)
@@ -1330,7 +1335,8 @@ class WeComSynthesizer(object):
             offset = 0
 
         y = list_top + offset
-        item_cls = CLS_CONTACT_ITEM if is_contacts else CLS_CONVERSATION_ITEM
+        # c13：会话行和联系人行同为 list_item
+        item_cls = CLS_LIST_ITEM
 
         for i in range(n):
             row_box = (x0, y, x0 + list_w, y + row_h)
@@ -1423,7 +1429,7 @@ class WeComSynthesizer(object):
 
     # -------------------------------------------------------- contact profile
     def _draw_category_list(self, img, draw, x0, list_w, list_top, H, name_c, snip_c, sc):
-        """客户/分组目录：只有几行，下面留白。这些行不是 contact_item，不打标签。"""
+        """客户/分组目录：只有几行，下面留白。这些行不是 list_item，不打标签。"""
         company = self.rng.choice(self.names)
         cats = [
             '新的客户', '我的客户', '智能机器人', company, '添加成员',

@@ -2,9 +2,8 @@ self_avatar
 nav_chat_icon
 nav_contacts_icon
 search_bar
-contact_item
+list_item
 send_button
-conversation_item
 incoming_bubble
 outgoing_bubble
 input_bar

@@ -5,7 +5,7 @@
 输出布局对齐 yolo-label-tool：同一目录下 stem.jpg + stem.txt（外加 classes.txt）。
 
 示例:
-  python synthesize.py --count 50 --out out \\
+  python synthesize.py --count 50 --out out_c13 \\
       --avatars assets/avatars --icons assets/icons \\
       --names assets/names.txt --messages assets/messages.txt --seed 0
 """
@@ -27,7 +27,7 @@ def parse_args():
     p = argparse.ArgumentParser(description='Synthetic WeCom (企业微信) UI dataset generator')
     p.add_argument('--config', type=str, default=None, help='optional YAML config')
     p.add_argument('--count', type=int, default=50)
-    p.add_argument('--out', type=str, default='out')
+    p.add_argument('--out', type=str, default='out_c13')
     p.add_argument('--avatars', type=str, default='assets/avatars')
     p.add_argument('--icons', type=str, default='assets/icons')
     p.add_argument('--names', type=str, default='assets/names.txt')

@@ -76,9 +76,10 @@ MODEL: YOLO | None = None
 MODEL_PATH: str = ""
 CLASS_NAMES: dict[int, str] = {}
 
-# 权威类别表：与 14 类训练配置严格一一对应（已去掉 message_input）。
+# 权威类别表：13 类 c13（conversation_item 与 contact_item 合并为 list_item）。
 # 接口对外一律返回名称、不返回裸数字 id，这张表保证「数字 -> 名称」这一步永远成立 ——
 # 即使权重被重新导出/裁剪掉内嵌 names，也不会退化成返回 "7" 这种数字。
+# 实际使用的类别表以权重内嵌的 model.names 为准（见 load_model），所以旧 14 类权重照常可用。
 #
 # ⚠️ 顺序不可调整：id 是训练时写进标签文件的类别号，改顺序会让所有输出错位。
 CLASS_NAMES_CANONICAL: dict[int, str] = {
@@ -86,17 +87,43 @@ CLASS_NAMES_CANONICAL: dict[int, str] = {
     1: "nav_chat_icon",            # 导航栏「消息」图标
     2: "nav_contacts_icon",        # 导航栏「通讯录」图标
     3: "search_bar",               # 搜索框
-    4: "contact_item",             # 通讯录中的联系人条目（列表中的一行）
+    4: "list_item",                # 列表中的一行：会话 / 联系人 / 搜索结果（由调用方按页面区分）
     5: "send_button",              # 发送按钮
-    6: "conversation_item",        # 会话列表中的会话条目（列表中的一行）
-    7: "incoming_bubble",          # 接收的消息气泡
-    8: "outgoing_bubble",          # 发送的消息气泡
-    9: "input_bar",                # 工具条整行（表情/附件等，在白色输入区上方）
-    10: "single_chat",             # 分组面板里的单聊图标
-    11: "group_chat",              # 分组面板里的群聊图标
-    12: "contact_send_message",    # 联系人详情「发消息」
-    13: "nav_groups_icon",         # 导航栏「分组」图标
+    6: "incoming_bubble",          # 接收的消息气泡
+    7: "outgoing_bubble",          # 发送的消息气泡
+    8: "input_bar",                # 工具条整行（表情/附件等，在白色输入区上方）
+    9: "single_chat",              # 分组面板里的单聊图标
+    10: "group_chat",              # 分组面板里的群聊图标
+    11: "contact_send_message",    # 联系人详情「发消息」
+    12: "nav_groups_icon",         # 导航栏「分组」图标
 }
+
+# 旧 14 类（c14）权重的类别表。只用来识别「这是旧权重」，不参与推理。
+CLASS_NAMES_LEGACY_C14: dict[int, str] = {
+    0: "self_avatar", 1: "nav_chat_icon", 2: "nav_contacts_icon", 3: "search_bar",
+    4: "contact_item", 5: "send_button", 6: "conversation_item", 7: "incoming_bubble",
+    8: "outgoing_bubble", 9: "input_bar", 10: "single_chat", 11: "group_chat",
+    12: "contact_send_message", 13: "nav_groups_icon",
+}
+
+# 列表行的逻辑类别。旧权重输出 conversation_item / contact_item，新权重输出 list_item；
+# 每个检测框都带 logical_name 字段，三者统一为 "list_item"，class_name 保持权重原样不改。
+LIST_ITEM = "list_item"
+LIST_ITEM_ALIASES = frozenset({"list_item", "conversation_item", "contact_item"})
+
+
+def logical_name(class_name: str) -> str:
+    """class_name -> 逻辑类别：列表行三种名字统一成 list_item，其余原样返回。"""
+    return LIST_ITEM if class_name in LIST_ITEM_ALIASES else class_name
+
+
+def schema_of(names: dict[int, str]) -> str:
+    if names == CLASS_NAMES_CANONICAL:
+        return "c13"
+    if names == CLASS_NAMES_LEGACY_C14:
+        return "c14"
+    return "custom"
+
 
 # imgsz=1280 必须与训练分辨率一致（runs/train/wxwork_ui/args.yaml: imgsz=1280），
 # 不是可调的性能旋钮 —— 降到 640 会大面积漏检，详见文件头部说明
@@ -215,9 +242,11 @@ def result_to_dict(r, params: dict) -> dict:
         for i, cid in enumerate(clss):
             x1, y1, x2, y2 = (round(v, 2) for v in xyxy[i])
             cx, cy, bw, bh = (round(v, 2) for v in xywh[i])
+            name = CLASS_NAMES.get(cid, str(cid))
             detections.append({
                 "class_id": cid,
-                "class_name": CLASS_NAMES.get(cid, str(cid)),
+                "class_name": name,
+                "logical_name": logical_name(name),
                 "conf": round(float(confs[i]), 4),
                 "xyxy": [x1, y1, x2, y2],
                 "xywh": [cx, cy, bw, bh],
@@ -374,6 +403,8 @@ def health():
         "model": MODEL_PATH,
         "nc": len(CLASS_NAMES),
         "classes": CLASS_NAMES,
+        "schema": schema_of(CLASS_NAMES),
+        "list_item_aliases": sorted(LIST_ITEM_ALIASES),
         "device": "cpu",
         "torch": torch.__version__,
         "defaults": DEFAULTS,
@@ -388,7 +419,8 @@ def health():
 
 @app.get("/classes")
 def classes():
-    return jsonify({"nc": len(CLASS_NAMES), "classes": CLASS_NAMES})
+    return jsonify({"nc": len(CLASS_NAMES), "classes": CLASS_NAMES, "schema": schema_of(CLASS_NAMES),
+                    "list_item_aliases": sorted(LIST_ITEM_ALIASES)})
 
 
 @app.post("/predict")
@@ -705,7 +737,10 @@ def load_model(path: str):
     print(f"        类别: {', '.join(f'{i}={n}' for i, n in sorted(CLASS_NAMES.items()))}")
 
     # 与本项目约定的类别表对一遍，不一致就喊出来 —— 多半是加载了别人的权重
-    if embedded and CLASS_NAMES != CLASS_NAMES_CANONICAL:
+    if embedded and CLASS_NAMES == CLASS_NAMES_LEGACY_C14:
+        print("[提示] 这是旧 14 类（c14）权重：会话行/联系人行分别输出 conversation_item / contact_item，"
+              "响应里的 logical_name 会把它们统一成 list_item")
+    elif embedded and CLASS_NAMES != CLASS_NAMES_CANONICAL:
         print("[警告] 权重内嵌类别表与 server.py 的 CLASS_NAMES_CANONICAL 不一致：")
         for i in sorted(set(embedded) | set(CLASS_NAMES_CANONICAL)):
             a, b = embedded.get(i), CLASS_NAMES_CANONICAL.get(i)
