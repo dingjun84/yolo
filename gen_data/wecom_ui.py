@@ -15,6 +15,8 @@ list_item 框几何（唯一真值来源 _row_rect，别在别处手写坐标）
   左边界 = 栏内容区左边界；右边界 = 栏右分隔线所在像素列；
   上下 = 整行行高。同一张图内所有 list_item 等宽等高；
   不同图栏宽可左右拉动，宽度随之变化，但绝不越过栏右分隔线。
+  例外：forward_dialog（转发「发送给」弹窗）按用户手标——框从头像左 -4 起（不含勾选框）
+  到搜索框右沿，高 = 行距 - 9；同图仍等宽等高。见 _render_forward_dialog。
 """
 from __future__ import print_function, division
 import os
@@ -92,6 +94,29 @@ C_DARK_SEP = (55, 58, 64)
 C_DARK_INPUT = (34, 35, 36)
 C_WECHAT_GREEN = (7, 193, 96)         # @微信
 C_CORP_ORANGE = (232, 136, 58)        # 外部联系人 @公司（搜索结果行）
+
+# 转发「发送给」弹窗（forward_dialog preset，对照 Windows 截图取色）
+C_FWD_LEFT_BG = (245, 247, 250)        # 左栏底
+C_FWD_LEFT_BG_ALT = (246, 246, 247)
+C_FWD_TEXT = (16, 20, 26)
+C_FWD_TEXT_SEC = (109, 113, 118)       # 占位 / 名片预览正文 / 已选择N个聊天
+C_FWD_TEXT_TITLE = (106, 111, 117)     # 最近聊天 / 联系人 / 群聊
+C_FWD_TEXT_HINT = (157, 160, 163)      # (3) 人数 / 第二行 / 留言占位
+C_FWD_SEARCH_BG = (234, 235, 239)
+C_FWD_BLUE = (38, 126, 240)            # 勾选框 / 可点发送
+C_FWD_HILITE = (40, 134, 250)          # 搜索命中字
+C_FWD_SEND_DISABLED = (172, 207, 250)
+C_FWD_SEND_DISABLED_TEXT = (214, 231, 253)
+C_FWD_CANCEL_BG = (243, 243, 244)
+C_FWD_CARD_BG = (248, 248, 248)
+C_FWD_CARD_BAR = (224, 224, 226)
+C_FWD_INPUT_BORDER = (218, 219, 220)
+C_FWD_CHECK_BORDER = (165, 168, 173)
+C_FWD_CLOSE = (164, 167, 170)
+C_FWD_ROW_CLOSE = (120, 123, 128)
+C_FWD_DIVIDER = (230, 231, 232)
+C_FWD_BTN_DISABLED_TEXT = (162, 165, 169)
+C_FWD_FILE_GREEN = (31, 188, 68)
 
 
 def _load_font(size):
@@ -384,6 +409,62 @@ def _group_avatar_img(paths, size, rng):
     return canvas
 
 
+def _load_font_from(candidates, size):
+    for p, idx in candidates:
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, size, index=idx)
+            except Exception:
+                continue
+    return _load_font(size)
+
+
+def _load_font_fwd(size):
+    """forward_dialog 正文字体：Windows 雅黑 + ClearType 的笔画偏粗，Heiti Light 太细，
+    这里优先 Heiti SC Medium / 雅黑；找不到退回 _load_font。只给 forward_dialog 用。"""
+    return _load_font_from([
+        ('/System/Library/Fonts/STHeiti Medium.ttc', 1),
+        ('C:/Windows/Fonts/msyh.ttc', 0),
+        ('/System/Library/Fonts/Hiragino Sans GB.ttc', 0),
+    ], size)
+
+
+def _load_font_bold(size):
+    """粗体（弹窗标题「发送给」）；找不到就退回常规字体。"""
+    return _load_font_from([
+        ('/System/Library/Fonts/Hiragino Sans GB.ttc', 2),
+        ('C:/Windows/Fonts/msyhbd.ttc', 0),
+        ('/System/Library/Fonts/STHeiti Medium.ttc', 1),
+        ('/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc', 0),
+    ], size)
+
+
+def _text_adv(draw, text, font):
+    """文字前进宽度（拼接多段彩色文字用）。"""
+    try:
+        return draw.textlength(text, font=font)
+    except Exception:
+        return _text_size(draw, text, font)[0]
+
+
+def _file_transfer_icon(size):
+    """文件传输助手：绿底圆角方块 + 白色文件夹 + 绿色箭头（4x 超采样）。"""
+    S = 4
+    n = size * S
+    green = C_FWD_FILE_GREEN + (255,)
+    im = Image.new('RGBA', (n, n), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([0, 0, n - 1, n - 1], radius=int(n * 0.12), fill=green)
+    x0, x1 = n * 0.24, n * 0.76
+    y0, y1 = n * 0.30, n * 0.72
+    d.polygon([(x0, y0), (n * 0.44, y0), (n * 0.49, n * 0.35), (x1, n * 0.35), (x1, y1), (x0, y1)],
+              fill=(255, 255, 255, 255))
+    ay = n * 0.535
+    d.rectangle([n * 0.36, ay - n * 0.035, n * 0.58, ay + n * 0.035], fill=green)
+    d.polygon([(n * 0.55, ay - n * 0.10), (n * 0.66, ay), (n * 0.55, ay + n * 0.10)], fill=green)
+    return im.resize((size, size), Image.LANCZOS)
+
+
 
 class WeComSynthesizer(object):
     def __init__(self, avatars_dir, icons_dir, names, messages, snippets,
@@ -414,6 +495,19 @@ class WeComSynthesizer(object):
         'contacts_profile_dark',
         'contacts_customers',
         'contacts_search',
+        'forward_dialog',
+    )
+    # 别名 -> 规范 preset（forward_dialog_* 强制子模式）
+    PRESET_ALIASES = {
+        'contacts_profile_light': 'contacts_profile',
+        'forward_dialog_recent': 'forward_dialog',
+        'forward_dialog_search': 'forward_dialog',
+    }
+    # 不传 --preset 的随机模式只从这些里挑（保持加 forward_dialog 之前的分布不变）
+    _RANDOM_PRESETS = (
+        'chat_narrow', 'chat_wide', 'chat_wide_groups', 'chat_dark',
+        'contacts_profile', 'contacts_profile_dark', 'contacts_customers', 'contacts_search',
+        'forward_dialog',
     )
 
     def _sample_search_hits(self):
@@ -595,6 +689,8 @@ class WeComSynthesizer(object):
         name = (preset or '').strip().lower().replace('-', '_')
         if name == 'contacts_profile_light':
             name = 'contacts_profile'
+        if name in ('forward_dialog', 'forward_dialog_recent', 'forward_dialog_search'):
+            return self._forward_dialog_scenario(name, preset, jitter)
         dark = False
         show_groups = None  # None=宽栏默认画分组；False=强制不画；True=强制画
         search_query = None
@@ -777,7 +873,7 @@ class WeComSynthesizer(object):
         if rng.random() < 0.18:
             return self.make_scenario('contacts_customers', jitter=True)
         if rng.random() < 0.40:
-            return self.make_scenario(rng.choice(self.PRESETS), jitter=True)
+            return self.make_scenario(rng.choice(self._RANDOM_PRESETS), jitter=True)
 
         nav_wide = rng.random() < 0.45
         page = 'contacts' if rng.random() < 0.28 else 'chat'
@@ -843,6 +939,8 @@ class WeComSynthesizer(object):
 
     def render(self, scenario=None, preset=None):
         sc = scenario or self.sample_scenario(preset=preset)
+        if sc.get('page') == 'forward_dialog':
+            return self._render_forward_dialog(sc)
         W, H = sc['w'], sc['h']
         win_bg = C_DARK_BG if sc.get('dark') else C_WIN_BG
         img = Image.new('RGB', (W, H), win_bg)
@@ -888,6 +986,440 @@ class WeComSynthesizer(object):
             if y is not None:
                 yolo_lines.append('%d %.6f %.6f %.6f %.6f' % (cls, y[0], y[1], y[2], y[3]))
 
+        return img, yolo_lines, sc
+
+    # ------------------------------------------------------- forward dialog
+    # 企业微信「转发 → 发送给」弹窗。只有弹窗本身，没有主窗口。
+    # 两种模式（forward_dialog 各约 50%；也可用别名强制）：
+    #   recent : 搜索框 + 三个按钮 + 「最近聊天」列表，右侧名片预览 / 留言 / 发送(灰) / 取消
+    #   search : 搜索框里有查询词，「联系人」/「群聊」两段结果，命中字蓝色；
+    #            勾选的会话列在右栏，发送变实心蓝
+    # 标注（以用户手标为准）：
+    #   search_bar = 灰色搜索胶囊
+    #   list_item  = 左栏每条会话行：左边 = 头像左 - 4（不含勾选框），右边 = 搜索框右沿，
+    #                高 = 行距 - _FWD_LABEL_GAP，以头像中线居中；同图所有行等宽等高。
+    #                右栏「已选择」的每条会话也是 list_item：头像左 - 8 → 右栏右内边距 + 4，同高。
+    #   不标：分段标题、三个按钮、分隔线、名片预览、留言框、发送/取消、各种 ×、标题文字。
+    _FWD_LABEL_GAP = 9   # 手标框比行距矮约 9–10px（a.png 行距 50、框高 40；b.png 框高 42）
+    _FWD_LONG_CORPS = (u'深圳好凶火科技有限公司', u'深圳硅基启创科技有限公司',
+                       u'广州云帆信息技术有限公司', u'杭州明石网络科技有限公司',
+                       u'北京星河互动科技有限公司', u'上海青禾数据服务有限公司')
+    _FWD_LATIN = ('casper', 'Kevin', 'Lucy', 'Tony', 'Amy', 'Jason', 'robot')
+    _FWD_GROUPS = (u'测试robot', u'项目沟通群', u'产品研发群', u'客户服务群', u'市场推广部',
+                   u'周末羽毛球', u'售后对接群', u'华南区销售', u'内部测试群')
+    _FWD_DEPTS = (u'研发部', u'产品部', u'市场部', u'客户成功部', u'行政部')
+    _FWD_GIVEN = u'杰明华伟丽芳军磊静婷浩宇'
+
+    def _fwd_corp(self, p_none=0.3):
+        rng = self.rng
+        r = rng.random()
+        if r < p_none:
+            return None
+        if r < p_none + (1.0 - p_none) * 0.45:
+            return u'\u5fae\u4fe1'
+        pool = self._FWD_LONG_CORPS + tuple(c for c in self._CORPS if c != u'\u5fae\u4fe1')
+        return rng.choice(pool)
+
+    def _fwd_names(self):
+        """names.txt 里个别条目自带「@公司」（如「0-1 @微信」），这里去掉后缀，@公司由场景自己加。"""
+        out = getattr(self, '_fwd_names_cache', None)
+        if out is None:
+            out = []
+            for nm in self.names:
+                nm = nm.split(u'@')[0].strip()
+                if nm and nm not in out:
+                    out.append(nm)
+            out = out or [u'\u7528\u6237']
+            self._fwd_names_cache = out
+        return out
+
+    def _fwd_person_name(self):
+        if self.rng.random() < 0.12:
+            return self.rng.choice(self._FWD_LATIN)
+        return self.rng.choice(self._fwd_names())
+
+    def _fwd_group_name(self, member=None):
+        rng = self.rng
+        if member is not None or rng.random() < 0.5:
+            ms = [self._fwd_person_name() for _ in range(rng.randint(2, 3))]
+            if rng.random() < 0.35:
+                ms[1] = ms[0] + u'的机器人'
+            if member is not None:
+                ms[-1] = member
+            return u'\u3001'.join(ms)
+        return rng.choice(self._FWD_GROUPS)
+
+    def _forward_dialog_scenario(self, name, preset, jitter=True):
+        rng = self.rng
+        if name == 'forward_dialog_recent':
+            mode = 'recent'
+        elif name == 'forward_dialog_search':
+            mode = 'search'
+        else:
+            mode = 'recent' if rng.random() < 0.5 else 'search'
+        if jitter:
+            w = rng.randint(680, 1100)
+            h = rng.randint(520, 640)
+            ratio = rng.uniform(0.45, 0.52)
+            pitch = rng.randint(46, 54)
+        else:
+            w, h, ratio, pitch = (720 if mode == 'recent' else 1024), 560, 0.5, 50
+        rows, groups, query = [], [], None
+        if mode == 'recent':
+            n = rng.randint(4, 8)
+            file_idx = rng.randrange(n) if rng.random() < 0.6 else -1
+            for i in range(n):
+                if i == file_idx:
+                    rows.append({'kind': 'file', 'name': u'文件传输助手'})
+                elif rng.random() < 0.3:
+                    rows.append({'kind': 'group', 'name': self._fwd_group_name(),
+                                 'count': rng.choice([3, 3, 4, 5, 6, 8, 12, 25, 36, 120])})
+                else:
+                    rows.append({'kind': 'person', 'name': self._fwd_person_name(),
+                                 'corp': self._fwd_corp()})
+            n_chk = 0 if rng.random() < 0.8 else rng.randint(1, 2)
+            show_card = True
+        else:
+            names = self._fwd_names()
+            base = rng.choice(names)
+            query = base if (len(base) < 2 or rng.random() < 0.6) else base[:1]
+            cands = [nm for nm in names if query in nm and nm != query]
+            # 只有 1–2 个汉字的查询才拼「查询 + 名」（丁俊杰）；昵称/英文名只用原名或名单里的同名
+            short_cjk = len(query) <= 2 and all(u'\u4e00' <= ch <= u'\u9fff' for ch in query)
+            n_c = rng.choice([1, 2, 3, 3, 4])
+            seen = set()
+            for i in range(n_c):
+                for _ in range(10):
+                    if query == base and (rng.random() < 0.6 or not (short_cjk or cands)):
+                        nm = query
+                    elif cands and (rng.random() < 0.5 or not short_cjk):
+                        nm = rng.choice(cands)
+                    else:
+                        nm = query + rng.choice(self._FWD_GIVEN)
+                    corp = self._fwd_corp(p_none=0.3)
+                    if (nm, corp) not in seen:
+                        break
+                seen.add((nm, corp))
+                if corp == u'\u5fae\u4fe1':
+                    sub = u'微信联系人' if rng.random() < 0.85 else None
+                elif corp is None:
+                    r = rng.random()
+                    sub = (rng.choice(self._FWD_LONG_CORPS) if r < 0.6
+                           else (rng.choice(self._FWD_DEPTS) if r < 0.8 else None))
+                else:
+                    sub = None if rng.random() < 0.75 else rng.choice(self._FWD_DEPTS)
+                rows.append({'kind': 'person', 'name': nm, 'corp': corp, 'sub': sub})
+            for i in range(rng.choice([0, 1, 2, 2, 3])):
+                member = rng.choice(rows)['name']
+                gname = self._fwd_group_name(member if rng.random() < 0.45 else None)
+                groups.append({'kind': 'group', 'name': gname, 'member': member,
+                               'count': rng.choice([3, 3, 4, 5, 8, 12, 30])})
+            n_chk = rng.choice([0, 1, 1, 1, 2, 2, 3])
+            show_card = rng.random() < 0.25
+        total = len(rows) + len(groups)
+        n_chk = min(n_chk, total)
+        checked = sorted(rng.sample(range(total), n_chk)) if n_chk else []
+        card_text = None
+        if show_card:
+            if rng.random() < 0.7:
+                card_text = u'你好，我是%s的%s，这是我的名片，期待与你合作。' % (
+                    rng.choice(self._FWD_LONG_CORPS), rng.choice(self._fwd_names()))
+            else:
+                card_text = rng.choice(self.messages)
+        return {
+            'w': w, 'h': h,
+            'page': 'forward_dialog',
+            'preset': preset,
+            'fwd_mode': mode,
+            'nav_wide': False,
+            'left_w': int(round(w * ratio)),
+            'pad': rng.choice([22, 24, 24, 24, 26]) if jitter else 24,
+            'pitch': pitch,
+            'left_bg': rng.choice([C_FWD_LEFT_BG, C_FWD_LEFT_BG_ALT]) if jitter else C_FWD_LEFT_BG,
+            'rows': rows,
+            'groups': groups,
+            'query': query,
+            'checked': checked,
+            'card_text': card_text,
+            'corner_r': rng.choice([0, 8, 8, 8]) if jitter else 8,
+        }
+
+    def _fwd_fonts(self):
+        f = getattr(self, '_fwd_font_cache', None)
+        if f is None:
+            f = {
+                'nm': _load_font_fwd(14),    # 查询词 / 留言 / 发送 取消
+                'name': _load_font_fwd(13),  # 行内名字 / 群人数
+                'md': _load_font_fwd(13),    # 分段标题 / 三个按钮
+                'sm': _load_font_fwd(12),    # @公司 / 名片预览 / 已选择N个聊天
+                'sub': _load_font_fwd(11),   # 搜索结果第二行
+                'title': _load_font_bold(14),
+            }
+            self._fwd_font_cache = f
+        return f
+
+    def _fwd_text(self, draw, x, cy, text, font, fill):
+        """文字按 CJK 字面框竖直居中在 cy；返回右端 x。"""
+        bb = draw.textbbox((0, 0), u'\u56fd', font=font)
+        draw.text((x, cy - (bb[1] + bb[3]) / 2.0), text, fill=fill, font=font)
+        return x + _text_adv(draw, text, font)
+
+    def _fwd_segments(self, draw, x, cy, segs, font, max_x):
+        """多段彩色文字左到右拼接；seg = (text, fill[, font])。超过 max_x 的那段截断加省略号。"""
+        for seg in segs:
+            text, fill = seg[0], seg[1]
+            fnt = seg[2] if len(seg) > 2 else font
+            if not text:
+                continue
+            w = _text_adv(draw, text, fnt)
+            if x + w > max_x:
+                t = _truncate(draw, text, fnt, max(0, int(max_x - x)))
+                return self._fwd_text(draw, x, cy, t, fnt, fill)
+            x = self._fwd_text(draw, x, cy, text, fnt, fill)
+        return x
+
+    @staticmethod
+    def _fwd_hl(text, q, fill):
+        if not q or q not in text:
+            return [(text, fill)]
+        out = []
+        parts = text.split(q)
+        for i, p in enumerate(parts):
+            if p:
+                out.append((p, fill))
+            if i < len(parts) - 1:
+                out.append((q, C_FWD_HILITE))
+        return out
+
+    def _fwd_corp_seg(self, corp):
+        """@公司 后缀：比名字小一号（截图里 12px），微信绿 / 公司橙。"""
+        if not corp:
+            return []
+        fill = C_WECHAT_GREEN if corp == u'\u5fae\u4fe1' else C_CORP_ORANGE
+        return [(u'@' + corp, fill, self._fwd_fonts()['sm'])]
+
+    def _fwd_checkbox(self, draw, x, cy, checked, s=16):
+        y0 = int(round(cy - s / 2.0))
+        if checked:
+            draw.rounded_rectangle([x, y0, x + s - 1, y0 + s - 1], radius=2, fill=C_FWD_BLUE)
+            draw.line([(x + 4, y0 + 8), (x + 7, y0 + 11), (x + 12, y0 + 5)],
+                      fill=(255, 255, 255), width=2)
+        else:
+            draw.rounded_rectangle([x, y0, x + s - 1, y0 + s - 1], radius=2,
+                                   fill=(255, 255, 255), outline=C_FWD_CHECK_BORDER)
+
+    def _fwd_x(self, draw, cx, cy, r, fill):
+        draw.line([(cx - r, cy - r), (cx + r, cy + r)], fill=fill, width=1)
+        draw.line([(cx - r, cy + r), (cx + r, cy - r)], fill=fill, width=1)
+
+    def _fwd_avatar(self, row, size, seeds):
+        """同一会话在左栏和右栏「已选择」里用同一张头像：每行一个子种子（seeds 按 id(row) 缓存）。"""
+        if row['kind'] == 'file':
+            return _file_transfer_icon(size)
+        key = id(row)
+        if key not in seeds:
+            seeds[key] = self.rng.randrange(1 << 30)
+        local = random.Random(seeds[key])
+        if row['kind'] == 'group':
+            return _group_avatar_img(self.avatar_paths, size, local)
+        return _avatar_img(self.avatar_paths, size, local)
+
+    def _render_forward_dialog(self, sc):
+        W, H = sc['w'], sc['h']
+        lw, P, pad = sc['left_w'], sc['pitch'], sc['pad']
+        mode = sc['fwd_mode']
+        q = sc.get('query')
+        fonts = self._fwd_fonts()
+        f_nm, f_md, f_sub, f_title = fonts['nm'], fonts['md'], fonts['sub'], fonts['title']
+        f_sm, f_name = fonts['sm'], fonts['name']
+        img = Image.new('RGB', (W, H), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        labels = []
+        draw.rectangle([0, 0, lw - 1, H], fill=sc['left_bg'])
+
+        # ---- 搜索框（search_bar）
+        sx, sy, sh = pad, 24, 32
+        sw = lw - 2 * pad
+        draw.rounded_rectangle([sx, sy, sx + sw, sy + sh], radius=6, fill=C_FWD_SEARCH_BG)
+        sicon = _recolor_keep_alpha(_load_icon(self.icons_dir, 'search.png', 16), (106, 110, 116))
+        _paste_rgba(img, sicon, (sx + 12, sy + (sh - 16) // 2))
+        scy = sy + sh / 2.0
+        if q:
+            self._fwd_text(draw, sx + 36, scy, q, f_nm, C_FWD_TEXT)
+            self._fwd_x(draw, sx + sw - 16, scy, 4, (111, 115, 122))
+        else:
+            self._fwd_text(draw, sx + 36, scy, u'搜索', f_nm, C_FWD_TEXT_SEC)
+        labels.append((CLS_SEARCH_BAR, sx, sy, sx + sw, sy + sh))
+
+        # 左栏 list_item 共用的列边界与框高
+        lh = P - self._FWD_LABEL_GAP
+        av_x = pad + 28
+        col_left = av_x - 4
+        col_right = sx + sw
+        name_max_x = col_right - 6
+        chk_set = set(sc['checked'])
+        viewport = (0, 0, W, H)
+        av_seeds = {}
+
+        def add_label(left, right, cy):
+            box = _clip_box(_row_rect(left, right, int(round(cy - lh / 2.0)), lh), viewport)
+            if box:
+                labels.append((CLS_LIST_ITEM,) + tuple(box))
+
+        def left_row(row, idx, top, av, two_line):
+            cy = top + P / 2.0
+            self._fwd_checkbox(draw, pad, cy, idx in chk_set)
+            av_im = self._fwd_avatar(row, av, av_seeds)
+            av_top = int(round(cy - av / 2.0))
+            _paste_rgba(img, av_im, (av_x, av_top))
+            nx = av_x + av + 10
+            if row['kind'] == 'group':
+                segs = self._fwd_hl(row['name'], q, C_FWD_TEXT)
+                cnt = (u' (%d)' % row['count'], C_FWD_TEXT_HINT)
+                cnt_w = _text_adv(draw, cnt[0], f_name)
+                line_cy = av_top + 7 if two_line else cy
+                end = self._fwd_segments(draw, nx, line_cy, segs, f_name, name_max_x - cnt_w)
+                self._fwd_text(draw, end, line_cy, cnt[0], f_name, cnt[1])
+                if two_line and row.get('member'):
+                    msegs = [(u'包含: ', C_FWD_TEXT_HINT)] + self._fwd_hl(row['member'], q, C_FWD_TEXT_HINT)
+                    self._fwd_segments(draw, nx, av_top + 24, msegs, f_sub, name_max_x)
+            else:
+                segs = self._fwd_hl(row['name'], q, C_FWD_TEXT) + self._fwd_corp_seg(row.get('corp'))
+                if two_line:
+                    self._fwd_segments(draw, nx, av_top + 7, segs, f_name, name_max_x)
+                    if row.get('sub'):
+                        self._fwd_segments(draw, nx, av_top + 24, [(row['sub'], C_FWD_TEXT_HINT)],
+                                           f_sub, name_max_x)
+                else:
+                    self._fwd_segments(draw, nx, cy, segs, f_name, name_max_x)
+            add_label(col_left, col_right, cy)
+
+        all_rows = list(sc['rows']) + list(sc['groups'])
+        if mode == 'recent':
+            # 三个白按钮（不标）
+            by, bh = sy + sh + 16, 32
+            bw = (sw - 16) // 3
+            for k, (txt, enabled) in enumerate(((u'创建聊天', True), (u'微信', False), (u'更多', True))):
+                bx = sx + k * (bw + 8)
+                draw.rounded_rectangle([bx, by, bx + bw, by + bh], radius=4, fill=(255, 255, 255))
+                fill = C_FWD_TEXT if enabled else C_FWD_BTN_DISABLED_TEXT
+                tw = _text_adv(draw, txt, f_md)
+                icon_w = 16 if k < 2 else 0
+                tx = bx + (bw - tw - icon_w) / 2.0 + icon_w
+                bcy = by + bh / 2.0
+                if k == 0:   # 「+」
+                    px = tx - 12
+                    draw.line([(px - 5, bcy), (px + 5, bcy)], fill=fill, width=1)
+                    draw.line([(px, bcy - 5), (px, bcy + 5)], fill=fill, width=1)
+                elif k == 1:  # 分享箭头
+                    px = tx - 16
+                    draw.line([(px, bcy + 5), (px + 1, bcy), (px + 4, bcy - 2), (px + 11, bcy - 2)],
+                              fill=fill, width=1)
+                    draw.line([(px + 8, bcy - 5), (px + 11, bcy - 2), (px + 8, bcy + 1)], fill=fill, width=1)
+                self._fwd_text(draw, tx, bcy, txt, f_md, fill)
+            tcy = by + bh + 24
+            self._fwd_text(draw, sx, tcy, u'最近聊天', f_md, C_FWD_TEXT_TITLE)
+            top = int(round(tcy + 13))
+            av = min(32, P - 12)
+            for i, row in enumerate(sc['rows']):
+                if top >= H:
+                    break
+                left_row(row, i, top, av, False)
+                top += P
+        else:
+            tcy = sy + sh + 30
+            self._fwd_text(draw, sx, tcy, u'联系人', f_md, C_FWD_TEXT_TITLE)
+            top = int(round(tcy + 18))
+            av = min(30, P - 14)
+            for i, row in enumerate(sc['rows']):
+                if top >= H:
+                    break
+                left_row(row, i, top, av, True)
+                top += P
+            if sc['groups'] and top < H:
+                dy = top + 8
+                draw.line([(sx, dy), (sx + sw, dy)], fill=C_FWD_DIVIDER, width=1)
+                tcy = dy + 30
+                self._fwd_text(draw, sx, tcy, u'群聊', f_md, C_FWD_TEXT_TITLE)
+                top = int(round(tcy + 18))
+                for j, row in enumerate(sc['groups']):
+                    if top >= H:
+                        break
+                    left_row(row, len(sc['rows']) + j, top, av, True)
+                    top += P
+
+        # ---- 右栏
+        rx = lw + pad
+        rr = W - pad
+        self._fwd_text(draw, rx, 40, u'发送给', f_title, C_FWD_TEXT)
+        sel = [all_rows[i] for i in sc['checked']]
+        if sel:
+            cap = u'已选择%d个聊天' % len(sel)
+            self._fwd_text(draw, rr - _text_adv(draw, cap, f_sm), 40, cap, f_sm, C_FWD_TEXT_SEC)
+        btn_top = H - 56
+        card_text = sc.get('card_text')
+        card_top = None
+        if card_text:
+            lines = self._wrap(draw, card_text, f_sm, rr - rx - 24)
+            if len(lines) > 2:
+                lines = [lines[0], _truncate(draw, u''.join(lines[1:]), f_sm, rr - rx - 24)]
+            ch = 22 * len(lines) + 12
+            card_bot = H - 121
+            card_top = card_bot - ch
+            draw.rounded_rectangle([rx, card_top, rr, card_bot], radius=4, fill=C_FWD_CARD_BG)
+            draw.rectangle([rx, card_top, rx + 2, card_bot], fill=C_FWD_CARD_BAR)
+            for k, ln in enumerate(lines):
+                self._fwd_text(draw, rx + 12, card_top + 6 + 11 + 22 * k, ln, f_sm, C_FWD_TEXT_SEC)
+            iy0, iy1 = H - 104, H - 73
+            draw.rounded_rectangle([rx, iy0, rr, iy1], radius=4, fill=(255, 255, 255),
+                                   outline=C_FWD_INPUT_BORDER)
+            self._fwd_text(draw, rx + 12, (iy0 + iy1) / 2.0, u'留言', f_nm, C_FWD_TEXT_HINT)
+        # 已选择的会话（list_item，与左栏同框高）
+        list_bot = (card_top - 8) if card_top is not None else (btn_top - 12)
+        rav = 32
+        rav_x = rx + 5
+        r_left, r_right = rav_x - 8, rr + 4
+        top = 67 + (50 - P) // 2
+        for row in sel:
+            if top + P > list_bot:
+                break
+            cy = top + P / 2.0
+            _paste_rgba(img, self._fwd_avatar(row, rav, av_seeds), (rav_x, int(round(cy - rav / 2.0))))
+            segs = [(row['name'], C_FWD_TEXT)] + self._fwd_corp_seg(row.get('corp'))
+            self._fwd_segments(draw, rav_x + rav + 6, cy, segs, f_name, rr - 30)
+            self._fwd_x(draw, rr - 14, cy, 4, C_FWD_ROW_CLOSE)
+            add_label(r_left, r_right, cy)
+            top += P
+        # 发送 / 取消（不标）
+        bw = (rr - rx - 12) // 2
+        bcy = btn_top + 16
+        send_bg = C_FWD_BLUE if sel else C_FWD_SEND_DISABLED
+        send_fg = (255, 255, 255) if sel else C_FWD_SEND_DISABLED_TEXT
+        draw.rounded_rectangle([rx, btn_top, rx + bw, btn_top + 31], radius=4, fill=send_bg)
+        tw = _text_adv(draw, u'发送', f_nm)
+        self._fwd_text(draw, rx + (bw - tw) / 2.0, bcy, u'发送', f_nm, send_fg)
+        cx0 = rx + bw + 12
+        draw.rounded_rectangle([cx0, btn_top, rr, btn_top + 31], radius=4, fill=C_FWD_CANCEL_BG)
+        tw = _text_adv(draw, u'取消', f_nm)
+        self._fwd_text(draw, cx0 + (rr - cx0 - tw) / 2.0, bcy, u'取消', f_nm, C_FWD_TEXT)
+        # 右上角关闭
+        self._fwd_x(draw, W - 16, 12, 4, C_FWD_CLOSE)
+
+        r = sc.get('corner_r') or 0
+        if r:
+            mask = Image.new('L', (W, H), 0)
+            ImageDraw.Draw(mask).rounded_rectangle([0, 0, W - 1, H - 1], radius=r, fill=255)
+            img = Image.composite(img, Image.new('RGB', (W, H), (0, 0, 0)), mask)
+        else:
+            ImageDraw.Draw(img).rectangle([0, 0, W - 1, H - 1], outline=(214, 216, 220))
+
+        yolo_lines = []
+        for cls, x0, y0, x1, y1 in labels:
+            y = _box_to_yolo((x0, y0, x1, y1), W, H,
+                             min_h=self.min_visible_h,
+                             min_area_ratio=self.min_area_ratio)
+            if y is not None:
+                yolo_lines.append('%d %.6f %.6f %.6f %.6f' % (cls, y[0], y[1], y[2], y[3]))
         return img, yolo_lines, sc
 
     # ------------------------------------------------------------------ nav

@@ -42,7 +42,9 @@ def parse_args():
     p.add_argument('--preset', type=str, default=None,
                    help='Comma-separated high-fidelity presets to cycle: '
                         'chat_narrow,chat_wide,chat_wide_groups,chat_dark,'
-                        'contacts_profile,contacts_profile_dark,contacts_customers. '
+                        'contacts_profile,contacts_profile_dark,contacts_customers,'
+                        'contacts_search,forward_dialog '
+                        '(aliases: forward_dialog_recent, forward_dialog_search). '
                         'Example: --preset chat_narrow,contacts_profile --count 4')
     p.add_argument('--list-presets', action='store_true',
                    help='Print available presets and exit')
@@ -116,7 +118,9 @@ def main():
         print('Available presets:')
         for name in WeComSynthesizer.PRESETS:
             print('  ' + name)
-        print('Aliases: contacts_profile_light -> contacts_profile')
+        print('Aliases:')
+        for a, t in sorted(WeComSynthesizer.PRESET_ALIASES.items()):
+            print('  %s -> %s' % (a, t))
         return
 
     rng = random.Random(args.seed)
@@ -139,8 +143,7 @@ def main():
             sys.exit(2)
         for p in presets:
             key = p.lower().replace('-', '_')
-            if key == 'contacts_profile_light':
-                key = 'contacts_profile'
+            key = WeComSynthesizer.PRESET_ALIASES.get(key, key)
             if key not in WeComSynthesizer.PRESETS:
                 print('error: unknown preset %r' % p, file=sys.stderr)
                 print('choose from: %s' % ', '.join(WeComSynthesizer.PRESETS), file=sys.stderr)
