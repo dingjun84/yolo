@@ -46,6 +46,10 @@ def parse_args():
                         'contacts_search,forward_dialog '
                         '(aliases: forward_dialog_recent, forward_dialog_search). '
                         'Example: --preset chat_narrow,contacts_profile --count 4')
+    p.add_argument('--preset-random', action='store_true',
+                   help='Pick a RANDOM preset per image (uniform) instead of cycling. '
+                        'Without --preset, defaults to ALL presets = every page type '
+                        'equally likely. Combines with --preset to restrict the pool.')
     p.add_argument('--list-presets', action='store_true',
                    help='Print available presets and exit')
     return p.parse_args()
@@ -150,13 +154,20 @@ def main():
                 sys.exit(2)
 
     ext = 'jpg' if args.format in ('jpg', 'jpeg') else 'png'
+    # --preset-random 且未指定 --preset 时：默认池 = 全部 preset（所有页面等概率）
+    if args.preset_random and not presets:
+        presets = list(WeComSynthesizer.PRESETS)
     print('Generating %d images -> %s' % (args.count, out_root))
     if presets:
-        print('  presets (cycle): %s' % ', '.join(presets))
+        mode = 'random (uniform)' if args.preset_random else 'cycle'
+        print('  presets (%s): %s' % (mode, ', '.join(presets)))
 
     manifest = []
     for i in range(args.count):
-        preset = presets[i % len(presets)] if presets else None
+        if presets:
+            preset = rng.choice(presets) if args.preset_random else presets[i % len(presets)]
+        else:
+            preset = None
         img, lines, sc = syn.render(preset=preset)
         if preset:
             # readable name for hifi batch: chat_narrow_00000
