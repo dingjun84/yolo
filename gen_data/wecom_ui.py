@@ -8,8 +8,13 @@
   9 single_chat（单聊）  10 group_chat（群聊）
   11 contact_send_message（联系人详情「发消息」）  12 nav_groups_icon（导航「分组」）
 
-c14 -> c13：conversation_item(6) 与 contact_item(4) 外观几乎一样，模型分不清，
-合并为 list_item(4)；具体是会话还是联系人由 llm_rpa 按所在页面判断。
+list_item 覆盖会话行 / 通讯录行 / 搜索结果行 / 客户行，具体是会话还是联系人由
+llm_rpa 按所在页面判断。
+
+list_item 框几何（唯一真值来源 _row_rect，别在别处手写坐标）：
+  左边界 = 栏内容区左边界；右边界 = 栏右分隔线所在像素列；
+  上下 = 整行行高。同一张图内所有 list_item 等宽等高；
+  不同图栏宽可左右拉动，宽度随之变化，但绝不越过栏右分隔线。
 """
 from __future__ import print_function, division
 import os
@@ -23,11 +28,9 @@ CLS_SELF_AVATAR = 0
 CLS_NAV_CHAT = 1
 CLS_NAV_CONTACTS = 2
 CLS_SEARCH_BAR = 3
-# c13：会话行与联系人行合并为 list_item。两个旧名保留为别名，绘制逻辑不用改。
+# 会话行 / 通讯录行 / 搜索结果行 / 客户行统一为 list_item，仓库内不得再出现其它名字。
 CLS_LIST_ITEM = 4
-CLS_CONTACT_ITEM = CLS_LIST_ITEM
-CLS_CONVERSATION_ITEM = CLS_LIST_ITEM
-# message_input 已移除（c14）：输入区无边框、定位时为空，不再标注。
+# message_input 已移除：输入区无边框、定位时为空，不再标注。
 CLS_SEND_BUTTON = 5
 CLS_INCOMING = 6
 CLS_OUTGOING = 7
@@ -143,6 +146,20 @@ def _clip_box(box, viewport):
     if cx1 <= cx0 or cy1 <= cy0:
         return None
     return (cx0, cy0, cx1, cy1)
+
+
+def _row_rect(col_left, col_right, y, row_h):
+    """列表行的标注框：整栏宽 × 整行高。list_item 几何的唯一真值来源。
+
+    col_left  : 栏内容区左边界（绝对 x）
+    col_right : 栏右分隔线所在像素列（绝对 x），框右边界止于此，不得越过
+    y, row_h  : 该行顶部绝对 y 与行高
+
+    同一张图内所有 list_item 共用同一对 col_left/col_right 与同一 row_h，
+    因此等宽等高；不同图栏宽可变，宽度随之变化。调用方不得再自行内缩或
+    按文字宽度收窄 —— 那会让同一张图的框尺度漂移。
+    """
+    return (int(col_left), int(y), int(col_right), int(y + row_h))
 
 
 def _box_to_yolo(box, img_w, img_h, min_h=4, min_area_ratio=5e-5):
@@ -1237,9 +1254,11 @@ class WeComSynthesizer(object):
                 if y + row_h > H - 28:
                     break
                 name = self.rng.choice(self.names)
-                right = self._paint_customer_row(
+                self._paint_customer_row(
                     img, x0 + 8, y, max_w, row_h, name, corp, text_c)
-                labels.append((CLS_LIST_ITEM, x0 + 8, y, x0 + 8 + right, y + row_h))
+                # 标整栏：栏左边界 x0 -> 第三栏右分隔线 x3。
+                # 不用 _paint_customer_row 返回的文字右端 —— 那会让框宽随名字长度漂移。
+                labels.append((CLS_LIST_ITEM,) + _row_rect(x0, x3, y, row_h))
                 y += row_h + 2
                 total += 1
         if total:
@@ -1335,10 +1354,14 @@ class WeComSynthesizer(object):
             offset = 0
 
         y = list_top + offset
-        # c13：会话行和联系人行同为 list_item
+        # 会话行 / 通讯录行 / 搜索结果行都是 list_item，
+        # 且共用同一对栏边界 —— 同一张图内所有行等宽。
         item_cls = CLS_LIST_ITEM
+        col_left = x0
+        col_right = x0 + list_w - 1   # 栏右分隔线所在像素列
 
         for i in range(n):
+            # 绘画用框到栏边缘（含分隔线那一列），标注用框止于分隔线本身 —— 见 _row_rect。
             row_box = (x0, y, x0 + list_w, y + row_h)
             visible = _clip_box(row_box, viewport)
             selected = (i == sc['selected_idx'])
@@ -1416,12 +1439,13 @@ class WeComSynthesizer(object):
                 crop = row_im.crop((0, src_y0, list_w, src_y1))
                 img.paste(crop, (int(vx0), int(vy0)), crop)
 
-                if search_hits:
-                    lab = (vx0 + 6, vy0 + 2, vx1 - 6, vy1 - 2)
-                    if lab[2] > lab[0] and lab[3] > lab[1]:
-                        labels.append((item_cls, lab[0], lab[1], lab[2], lab[3]))
-                else:
-                    labels.append((item_cls, vx0, vy0, vx1, vy1))
+                # list_item 框：整栏宽 × 整行高，右边界止于栏右分隔线。
+                # 搜索结果行也用同一套边界（旧的 +6/±2 内缩已废），
+                # 否则同一张图里会混出两种尺度的框。
+                # 滚动裁剪只改变可见高度，残行仍按 min_visible_h 保留。
+                lab = _clip_box(_row_rect(col_left, col_right, y, row_h), viewport)
+                if lab:
+                    labels.append((item_cls, lab[0], lab[1], lab[2], lab[3]))
 
             y += row_h
             if y > list_bot + row_h:

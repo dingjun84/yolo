@@ -1,7 +1,5 @@
-# c13: conversation_item + contact_item merged into list_item (id 4); ids after old 6 shifted down by 1.
-# old14 -> new13: 0-5 same, 6->4, 7..13 -> 6..12  (tools/remap_14_to_13.py)
+# 13 类口径：列表行统一为 list_item (id 4)，类别名以 ../classes.txt 为准。
 # Generate: python synthesize.py --out out_c13 ...; split: python split_c13.py (out_c13 -> splits_c13, 90/10 per preset)
-# Or convert existing c14 data: python ../tools/remap_14_to_13.py --apply --src splits_c14 --out splits_c13 --yaml data_c13.yaml
 path: C:/Users/staff_01/WorkBuddy/yolo/gen_data/splits_c13
 train: train/images
 val: val/images

@@ -76,10 +76,11 @@ MODEL: YOLO | None = None
 MODEL_PATH: str = ""
 CLASS_NAMES: dict[int, str] = {}
 
-# 权威类别表：13 类 c13（conversation_item 与 contact_item 合并为 list_item）。
+# 权威类别表：13 类，列表行统一叫 list_item（口径见根目录 classes.txt）。
 # 接口对外一律返回名称、不返回裸数字 id，这张表保证「数字 -> 名称」这一步永远成立 ——
 # 即使权重被重新导出/裁剪掉内嵌 names，也不会退化成返回 "7" 这种数字。
-# 实际使用的类别表以权重内嵌的 model.names 为准（见 load_model），所以旧 14 类权重照常可用。
+# 实际使用的类别表以权重内嵌的 model.names 为准（见 load_model）；
+# 与这张表不一致的权重直接拒绝加载，不做类别名兼容。
 #
 # ⚠️ 顺序不可调整：id 是训练时写进标签文件的类别号，改顺序会让所有输出错位。
 CLASS_NAMES_CANONICAL: dict[int, str] = {
@@ -98,31 +99,8 @@ CLASS_NAMES_CANONICAL: dict[int, str] = {
     12: "nav_groups_icon",         # 导航栏「分组」图标
 }
 
-# 旧 14 类（c14）权重的类别表。只用来识别「这是旧权重」，不参与推理。
-CLASS_NAMES_LEGACY_C14: dict[int, str] = {
-    0: "self_avatar", 1: "nav_chat_icon", 2: "nav_contacts_icon", 3: "search_bar",
-    4: "contact_item", 5: "send_button", 6: "conversation_item", 7: "incoming_bubble",
-    8: "outgoing_bubble", 9: "input_bar", 10: "single_chat", 11: "group_chat",
-    12: "contact_send_message", 13: "nav_groups_icon",
-}
-
-# 列表行的逻辑类别。旧权重输出 conversation_item / contact_item，新权重输出 list_item；
-# 每个检测框都带 logical_name 字段，三者统一为 "list_item"，class_name 保持权重原样不改。
-LIST_ITEM = "list_item"
-LIST_ITEM_ALIASES = frozenset({"list_item", "conversation_item", "contact_item"})
-
-
-def logical_name(class_name: str) -> str:
-    """class_name -> 逻辑类别：列表行三种名字统一成 list_item，其余原样返回。"""
-    return LIST_ITEM if class_name in LIST_ITEM_ALIASES else class_name
-
-
 def schema_of(names: dict[int, str]) -> str:
-    if names == CLASS_NAMES_CANONICAL:
-        return "c13"
-    if names == CLASS_NAMES_LEGACY_C14:
-        return "c14"
-    return "custom"
+    return "c13" if names == CLASS_NAMES_CANONICAL else "custom"
 
 
 # imgsz=1280 必须与训练分辨率一致（runs/train/wxwork_ui/args.yaml: imgsz=1280），
@@ -246,7 +224,6 @@ def result_to_dict(r, params: dict) -> dict:
             detections.append({
                 "class_id": cid,
                 "class_name": name,
-                "logical_name": logical_name(name),
                 "conf": round(float(confs[i]), 4),
                 "xyxy": [x1, y1, x2, y2],
                 "xywh": [cx, cy, bw, bh],
@@ -404,7 +381,6 @@ def health():
         "nc": len(CLASS_NAMES),
         "classes": CLASS_NAMES,
         "schema": schema_of(CLASS_NAMES),
-        "list_item_aliases": sorted(LIST_ITEM_ALIASES),
         "device": "cpu",
         "torch": torch.__version__,
         "defaults": DEFAULTS,
@@ -419,8 +395,7 @@ def health():
 
 @app.get("/classes")
 def classes():
-    return jsonify({"nc": len(CLASS_NAMES), "classes": CLASS_NAMES, "schema": schema_of(CLASS_NAMES),
-                    "list_item_aliases": sorted(LIST_ITEM_ALIASES)})
+    return jsonify({"nc": len(CLASS_NAMES), "classes": CLASS_NAMES, "schema": schema_of(CLASS_NAMES)})
 
 
 @app.post("/predict")
@@ -725,28 +700,26 @@ def load_model(path: str):
     MODEL_PATH = str(p.resolve())
 
     embedded = {int(k): str(v) for k, v in (MODEL.names or {}).items()}
-    if embedded:
-        # 权重内嵌的类别表才是训练时的真实标签，以它为准
-        CLASS_NAMES = embedded
-    else:
+    if not embedded:
         CLASS_NAMES = dict(CLASS_NAMES_CANONICAL)
         print("[提示] 权重未内嵌类别表，改用 server.py 中的 CLASS_NAMES_CANONICAL")
+    elif embedded != CLASS_NAMES_CANONICAL:
+        # 不做任何类别名兼容：口径只有一个（classes.txt / CLASS_NAMES_CANONICAL），
+        # 对不上就拒绝启动，免得静默把另一套类名喂给调用方。
+        diff = [f"    id {i}: 权重={embedded.get(i)!r}  口径={CLASS_NAMES_CANONICAL.get(i)!r}"
+                for i in sorted(set(embedded) | set(CLASS_NAMES_CANONICAL))
+                if embedded.get(i) != CLASS_NAMES_CANONICAL.get(i)]
+        raise ValueError(
+            f"权重 {p.name} 的类别表与项目口径不一致（{len(embedded)} 类 vs {len(CLASS_NAMES_CANONICAL)} 类）：\n"
+            + "\n".join(diff)
+            + "\n  请改用 13 类权重（weights/yolo26n_detect_wxwork.pt）。"
+        )
+    else:
+        CLASS_NAMES = embedded
 
     print(f"加载模型 {MODEL_PATH}")
     print(f"        {len(CLASS_NAMES)} 个类别，耗时 {time.time() - t0:.2f}s")
     print(f"        类别: {', '.join(f'{i}={n}' for i, n in sorted(CLASS_NAMES.items()))}")
-
-    # 与本项目约定的类别表对一遍，不一致就喊出来 —— 多半是加载了别人的权重
-    if embedded and CLASS_NAMES == CLASS_NAMES_LEGACY_C14:
-        print("[提示] 这是旧 14 类（c14）权重：会话行/联系人行分别输出 conversation_item / contact_item，"
-              "响应里的 logical_name 会把它们统一成 list_item")
-    elif embedded and CLASS_NAMES != CLASS_NAMES_CANONICAL:
-        print("[警告] 权重内嵌类别表与 server.py 的 CLASS_NAMES_CANONICAL 不一致：")
-        for i in sorted(set(embedded) | set(CLASS_NAMES_CANONICAL)):
-            a, b = embedded.get(i), CLASS_NAMES_CANONICAL.get(i)
-            if a != b:
-                print(f"         id {i}: 权重={a!r}  约定={b!r}")
-        print("         接口以权重内嵌的为准（那是训练时的真实标签）")
 
     return MODEL
 

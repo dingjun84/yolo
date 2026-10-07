@@ -127,7 +127,6 @@ curl http://192.168.1.22:8080/health
   "nc": 13,
   "classes": {"0": "self_avatar", "1": "nav_chat_icon", "...": "..."},
   "schema": "c13",
-  "list_item_aliases": ["contact_item", "conversation_item", "list_item"],
   "device": "cpu",
   "torch": "2.13.0",
   "defaults": {"conf": 0.25, "iou": 0.7, "imgsz": 1280, "max_det": 300},
@@ -141,8 +140,7 @@ curl http://192.168.1.22:8080/health
 | `status` | string | `ok` = 就绪；`loading` = 模型还没加载完 |
 | `nc` | int | 类别数 |
 | `classes` | object | id → 类别名（取自当前权重） |
-| `schema` | string | `c13`（13 类新权重）/ `c14`（旧 14 类权重）/ `custom` |
-| `list_item_aliases` | array | 会被 `logical_name` 统一成 `list_item` 的类别名 |
+| `schema` | string | `c13`（与项目口径一致的 13 类权重）/ `custom`（其它） |
 | `defaults` | object | 服务端默认推理参数 |
 
 ---
@@ -163,14 +161,13 @@ curl http://192.168.1.22:8080/classes
     "9": "single_chat", "10": "group_chat", "11": "contact_send_message",
     "12": "nav_groups_icon"
   },
-  "schema": "c13",
-  "list_item_aliases": ["contact_item", "conversation_item", "list_item"]
+  "schema": "c13"
 }
 ```
 
-`classes` 永远是**当前加载的权重**内嵌的类别表：加载旧 14 类权重时这里就是 14 类、
-`schema` 为 `"c14"`；13 类新权重为 `"c13"`；其他为 `"custom"`。
-```
+`classes` 永远是**当前加载的权重**内嵌的类别表，与项目口径（根目录 `classes.txt`）一致时
+`schema` 为 `"c13"`，否则为 `"custom"` —— 但这种情况不会出现：口径不一致的权重在启动时
+就会被直接拒绝加载，不会带着第二套类名对外服务。
 
 ---
 
@@ -249,7 +246,6 @@ curl -X POST -F "file=@shot.png" \
     {
       "class_id": 4,
       "class_name": "list_item",
-      "logical_name": "list_item",
       "conf": 0.9637,
       "xyxy": [152.4, 236.1, 709.3, 410.2],
       "xywh": [430.85, 323.13, 556.9, 174.1],
@@ -270,9 +266,8 @@ curl -X POST -F "file=@shot.png" \
 | `class_counts` | object | 类别名 → 数量 |
 | `speed_ms` | object | `preprocess` / `inference` / `postprocess`，单位毫秒 |
 | `detections` | array | 检测框列表，**按 `conf` 降序** |
-| `detections[].class_id` | int | 类别 id（13 类权重 0–12，旧 14 类权重 0–13；附带信息，展示请用 `class_name`） |
-| `detections[].class_name` | string | **类别名，即标签**，原样取自权重的 `model.names`，如 `"list_item"`（旧权重为 `"conversation_item"` / `"contact_item"`） |
-| `detections[].logical_name` | string | 逻辑类别（**新增字段**）：`list_item` / `conversation_item` / `contact_item` 一律为 `"list_item"`，其余与 `class_name` 相同。调用方按它匹配列表行即可同时兼容新旧权重 |
+| `detections[].class_id` | int | 类别 id（13 类口径 0–12；附带信息，展示请用 `class_name`） |
+| `detections[].class_name` | string | **类别名，即标签**，取自权重的 `model.names`，如 `"list_item"` |
 | `detections[].conf` | float | 置信度，保留 4 位 |
 | `detections[].xyxy` | [float×4] | 左上角 + 右下角，`[x1, y1, x2, y2]` |
 | `detections[].xywh` | [float×4] | 中心点 + 宽高，`[cx, cy, w, h]` |
@@ -351,27 +346,22 @@ else:
 | 11 | `contact_send_message` | 联系人详情「发消息」 |
 | 12 | `nav_groups_icon` | 导航栏「分组」图标 |
 
-#### 13 类（c13）与旧 14 类（c14）
+#### 类别口径（13 类，全仓唯一一套）
 
-旧 14 类里 `contact_item`(4) 与 `conversation_item`(6) 外观几乎相同，模型经常混淆（contact_item 置信度 <0.4），
-现合并为 `list_item`(4)。old14 → new13 映射：0–5 不变，6→4，7→6，8→7，9→8，10→9，11→10，12→11，13→12。
-旧标签用 `tools/remap_14_to_13.py` 转换（默认 dry-run，`--apply` 写到新目录 `<src>_c13`，不改原目录）。
+列表行统一为 `list_item`(4)：会话行、通讯录行、搜索结果行、客户行外观接近，归为同一类；
+是会话还是联系人由调用方按「当前在哪个页面」判断，接口不做区分。
 
-兼容策略：
-
-- 服务端**不改写** `class_name` / `class_id` / `class_counts`，它们始终是权重里的真实标签，响应格式不变；
-- 每个检测框新增 `logical_name`，把 `conversation_item` / `contact_item` / `list_item` 统一成 `list_item`；
-- 所以旧 14 类权重和新 13 类权重可以直接互换，调用方用 `logical_name == "list_item"`（或自己做同样的别名判断，
-  llm_rpa 里是 `is_list_item()`）匹配列表行，再按「当前在哪个页面」决定它是会话还是联系人。
-- `/health`、`/classes` 里的 `schema` 字段告诉你当前加载的是 `c13` / `c14` / `custom`。
+- 服务端**不做任何类别名兼容**：权重内嵌类别表与项目口径（根目录 `classes.txt`）不一致时
+  **直接拒绝加载并列出差异**，不会带着第二套类名对外服务；
+- 响应里**没有**别名类字段，`class_id` / `class_name` / `class_counts` 就是权威标签，
+  调用方无需再做别名归一化（原先的 `logical_name()` / `is_list_item()` 这类兜底不再需要）；
+- `/health`、`/classes` 的 `schema` 字段：与口径一致为 `c13`，其余为 `custom`（正常不会出现）。
 
 > 类别 id 与训练数据严格绑定，顺序不可调整。
 >
 > 「id → 名称」的映射在 `server.py` 里以 `CLASS_NAMES_CANONICAL`（13 类）常量硬编码了一份，
 > 作为权威兜底：接口对外只吐名称，即使权重被重新导出、丢掉内嵌的类别表，
-> 也不会退化成返回 `7` 这种数字。启动时会拿权重的内嵌类别表和这份常量对一遍，
-> 不一致会打印警告（并列出差异），但仍以权重内嵌的为准 —— 那是训练时的真实标签。
-> 旧 14 类权重会被识别出来（`CLASS_NAMES_LEGACY_C14`），只打印提示、不算异常。
+> 也不会退化成返回 `7` 这种数字。
 
 ---
 

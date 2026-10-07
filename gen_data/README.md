@@ -43,9 +43,12 @@ gen_data/
 | 11 | contact_send_message（联系人详情「发消息」） |
 | 12 | nav_groups_icon（宽栏左下「分组」区标题图标） |
 
-**c13（当前）**：旧 14 类里的 `contact_item`(4) 和 `conversation_item`(6) 外观几乎一样，模型分不清
-（contact_item 置信度常 <0.4），已合并为 `list_item`(4)。是会话还是联系人由 llm_rpa 按所在页面决定。
-旧 14 类标签用 `../tools/remap_14_to_13.py` 转换（old→new：0-5 不变，6→4，7..13→6..12）。
+列表行统一为 `list_item`(4)：会话行、通讯录行、搜索结果行、客户行外观接近，合成时同一类；
+是会话还是联系人由 llm_rpa 按所在页面决定。
+
+`list_item` 框几何（`wecom_ui.py` 的 `_row_rect` 是唯一真值来源）：
+左边界取栏内容区左边界，右边界取栏右分隔线所在像素列，上下取整行行高。
+同一张图内所有 `list_item` 等宽等高；不同图栏宽可左右拉动，宽度随之变化，但绝不越过栏右分隔线。
 
 会话列表行标 `list_item`(4)；头像另标 `single_chat`(9) 或 `group_chat`(10)。
 通讯录页右侧详情生成 `contact_send_message`(11)，随机深色/浅色主题。

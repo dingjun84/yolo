@@ -14,7 +14,7 @@ DEFAULT_NAMES = [
     "nav_chat_icon",
     "nav_contacts_icon",
     "search_bar",
-    "list_item",  # c13：合并了旧 contact_item(4) / conversation_item(6)
+    "list_item",  # 会话行 / 通讯录行 / 搜索结果行 / 客户行统一一类
     "send_button",
     "incoming_bubble",
     "outgoing_bubble",

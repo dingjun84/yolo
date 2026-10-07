@@ -170,15 +170,16 @@ curl -X POST -H "Content-Type: application/json" \
   "class_counts": {"list_item": 4, "search_bar": 1, "self_avatar": 1},
   "speed_ms": {"preprocess": 15.18, "inference": 348.97, "postprocess": 4.55},
   "detections": [
-    {"class_id": 4, "class_name": "list_item", "logical_name": "list_item", "conf": 0.71,
+    {"class_id": 4, "class_name": "list_item", "conf": 0.71,
      "xyxy": [x1, y1, x2, y2], "xywh": [cx, cy, w, h],
      "center": [cx, cy], "size": [w, h], "area_ratio": 0.042}
   ]
 }
 ```
 
-13 类（c13）权重里列表行统一叫 `list_item`；旧 14 类权重仍输出 `conversation_item` / `contact_item`，
-`logical_name` 字段会把三者统一成 `list_item`，详见 API.md「13 类（c13）与旧 14 类（c14）」。
+13 类口径里列表行统一叫 `list_item`（会话行 / 通讯录行 / 搜索结果行 / 客户行同一类）。
+`class_name` 一律取自权重内嵌的 `model.names`；与项目口径不一致的权重会被直接拒绝加载，
+不存在第二套类名。
 
 `detections` 按置信度降序，`xyxy` 是原图像素坐标，可直接画框或用 `center` 做点击坐标。
 
