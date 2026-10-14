@@ -1448,55 +1448,128 @@ class WeComSynthesizer(object):
             name = _truncate(draw, self.rng.choice(self.names), self.font_md, nav_w - ax - av_size - 16)
             draw.text((ax + av_size + 8, ay + 8), name, fill=text_c, font=self.font_md)
 
-        # nav items: (key, 文案, 类别 id, 角标, 常态图标, 选中图标)
-        # 选中态：浅蓝底 + 蓝实心 *_selected.png（截图校准；白图标仅作缺省染色源）。
-        # key 与 sc['page'] 对应：谁等于 page 谁高亮（浅蓝底 + 蓝图标）。
-        # (key, 文案, 类别, 角标, 常态, 蓝实心选中, 白选中)
-        # 真实企微截图：选中 = 浅蓝底(#C8DEF7) + 蓝色图标(#267EF0)，不是「实心蓝底+白图标」。
-        items = [
-            ('chat',     u'\u6d88\u606f', CLS_NAV_CHAT, sc.get('chat_badge'),
-             'nav_chat.png', 'nav_chat_selected.png', 'nav_chat_selected_white.png'),
-            ('mail',     u'\u90ae\u4ef6', None, None,
-             'nav_mail.png', 'nav_mail_selected.png', 'nav_mail_selected_white.png'),
-            ('docs',     u'\u6587\u6863', None, None,
-             'nav_docs.png', 'nav_docs_selected.png', 'nav_docs_selected_white.png'),
-            ('contacts', u'\u901a\u8baf\u5f55', CLS_NAV_CONTACTS, sc.get('contacts_badge'),
-             'nav_contacts.png', 'nav_contacts_selected.png', 'nav_contacts_selected_white.png'),
-            ('cal',      u'\u65e5\u7a0b', None, None,
-             'nav_calendar.png', 'nav_calendar_selected.png', 'nav_calendar_selected_white.png'),
-            ('todo',     u'\u5f85\u529e', None, None,
-             'nav_todo.png', 'nav_todo_selected.png', 'nav_todo_selected_white.png'),
-            ('meet',     u'\u4f1a\u8bae', None, None,
-             'nav_meeting.png', 'nav_meeting_selected.png', 'nav_meeting_selected_white.png'),
-            ('wb',       u'\u5de5\u4f5c\u53f0', None, None,
-             'nav_workbench.png', 'nav_workbench_selected.png', 'nav_workbench_selected_white.png'),
-        ]
-        # 导航红点稀疏随机：整栏通常 0～2 个有角标，避免每个 icon 都挂红点
-        # chat/contacts 的 badge 来自 scenario；其它项默认无，再按概率补极少数
-        badgeable = [1, 2, 4, 5, 6, 7]  # mail/docs/cal/todo/meet/wb
-        n_extra = 0
-        if sc.get('extra_nav_dots'):
-            n_extra = self.rng.choice([0, 0, 0, 1, 1, 2])  # 多数时候 0～1
+        # ---- variable main-stack layout (random subset / order / spacing) ----
+        # Catalog: (key, 文案, 类别 id, 角标, 常态图标, 选中蓝, 选中白)
+        # 真实企微截图：选中 = 浅蓝底(#C8DEF7) + 蓝色图标(#267EF0)。
+        catalog = {
+            'chat': (
+                'chat', u'\u6d88\u606f', CLS_NAV_CHAT, sc.get('chat_badge'),
+                'nav_chat.png', 'nav_chat_selected.png', 'nav_chat_selected_white.png'),
+            'mail': (
+                'mail', u'\u90ae\u4ef6', None, None,
+                'nav_mail.png', 'nav_mail_selected.png', 'nav_mail_selected_white.png'),
+            'docs': (
+                'docs', u'\u6587\u6863', None, None,
+                'nav_docs.png', 'nav_docs_selected.png', 'nav_docs_selected_white.png'),
+            'contacts': (
+                'contacts', u'\u901a\u8baf\u5f55', CLS_NAV_CONTACTS, sc.get('contacts_badge'),
+                'nav_contacts.png', 'nav_contacts_selected.png', 'nav_contacts_selected_white.png'),
+            'cal': (
+                'cal', u'\u65e5\u7a0b', None, None,
+                'nav_calendar.png', 'nav_calendar_selected.png', 'nav_calendar_selected_white.png'),
+            'todo': (
+                'todo', u'\u5f85\u529e', None, None,
+                'nav_todo.png', 'nav_todo_selected.png', 'nav_todo_selected_white.png'),
+            'meet': (
+                'meet', u'\u4f1a\u8bae', None, None,
+                'nav_meeting.png', 'nav_meeting_selected.png', 'nav_meeting_selected_white.png'),
+            'wb': (
+                'wb', u'\u5de5\u4f5c\u53f0', None, None,
+                'nav_workbench.png', 'nav_workbench_selected.png', 'nav_workbench_selected_white.png'),
+        }
+        optional_keys = ['mail', 'docs', 'cal', 'todo', 'meet', 'wb']
+        page = sc.get('page')
+        chosen = []
+        # Always include the page-relevant labeled icon (when page is chat/contacts).
+        if page == 'chat':
+            chosen.append('chat')
+            if self.rng.random() < 0.85:
+                chosen.append('contacts')
+        elif page == 'contacts':
+            chosen.append('contacts')
+            if self.rng.random() < 0.85:
+                chosen.append('chat')
         else:
-            n_extra = self.rng.choice([0, 0, 0, 0, 1])  # 更稀
-        if n_extra:
-            picks = list(badgeable)
+            # other pages (should be rare for main nav): keep both labeled icons frequent
+            if self.rng.random() < 0.9:
+                chosen.append('chat')
+            if self.rng.random() < 0.9:
+                chosen.append('contacts')
+
+        n_opt = self.rng.randint(2, 6)
+        opts = list(optional_keys)
+        self.rng.shuffle(opts)
+        for k in opts:
+            if len([x for x in chosen if x in optional_keys]) >= n_opt:
+                break
+            if k not in chosen:
+                chosen.append(k)
+
+        self.rng.shuffle(chosen)
+
+        items = [list(catalog[k]) for k in chosen]
+
+        # 导航红点稀疏随机：整栏通常 0～2 个有角标
+        badgeable_idx = [i for i, it in enumerate(items)
+                         if it[0] in optional_keys and it[3] is None]
+        if sc.get('extra_nav_dots'):
+            n_extra = self.rng.choice([0, 0, 0, 1, 1, 2])
+        else:
+            n_extra = self.rng.choice([0, 0, 0, 0, 1])
+        if n_extra and badgeable_idx:
+            picks = list(badgeable_idx)
             self.rng.shuffle(picks)
             for j in picks[:n_extra]:
-                it = list(items[j])
-                if it[3] is not None:
-                    continue
-                it[3] = self.rng.choice([0, 0, 0, 1, 2, 3])  # 多为纯红点
-                items[j] = tuple(it)
+                items[j][3] = self.rng.choice([0, 0, 0, 1, 2, 3])
 
-        y = ay + av_size + 18
-        # 窄栏图标略大、宽栏略小（与企微侧栏观感一致）
+        # Random start gap after avatar + constant-within-image row/cell height
+        gap = self.rng.randint(8, 36)
+        y = ay + av_size + gap
         icon_sz = 20 if wide else 26
+        if wide:
+            row_h = self.rng.randint(34, 48)
+            inter_gap = self.rng.randint(0, 4)
+            step = row_h + inter_gap
+        else:
+            cell_h = self.rng.randint(48, 64)
+            step = cell_h
+
+        more_y = H - 48
+        # Reserve bottom zone for narrow bottom items / wide groups / more button
+        if (not wide) and sc.get('show_nav_groups', True):
+            # estimate: 0–3 bottom items at ~52px; keep at least room for groups
+            bot_reserve = self.rng.choice([52, 104, 156])
+        elif wide and sc.get('show_groups', False):
+            bot_reserve = 110
+        else:
+            bot_reserve = 40
+        stack_limit_y = more_y - bot_reserve
+
+        # Drop trailing optional icons if stack would collide with bottom zone;
+        # never drop the selected page icon.
+        def _item_is_selected(it):
+            return sc.get('page') == it[0]
+
+        while items and (y + step * len(items) > stack_limit_y):
+            # drop from end, preferring optionals that are not selected
+            drop_i = None
+            for i in range(len(items) - 1, -1, -1):
+                if items[i][0] in optional_keys and not _item_is_selected(items[i]):
+                    drop_i = i
+                    break
+            if drop_i is None:
+                # only labeled left; drop non-selected labeled if any
+                for i in range(len(items) - 1, -1, -1):
+                    if not _item_is_selected(items[i]):
+                        drop_i = i
+                        break
+            if drop_i is None:
+                break  # keep at least the selected icon
+            items.pop(drop_i)
 
         for key, text, cls_id, badge, icon_normal, icon_sel_blue, icon_sel_white in items:
             selected = (sc['page'] == key)
             if wide:
-                row_h = 40
                 if selected:
                     draw.rounded_rectangle([6, y, nav_w - 6, y + row_h], radius=6, fill=sel_nav)
                 ix = 14
@@ -1523,10 +1596,9 @@ class WeComSynthesizer(object):
                     pad = 2
                     labels.append((cls_id, ix - pad, iy - pad,
                                    ix + icon_sz + pad, iy + icon_sz + pad))
-                y += row_h + 2
+                y += step
             else:
                 # narrow: icon above text；角标贴图标右上角（略重叠）
-                cell_h = 56
                 cell_w = nav_w - 4
                 cx0 = 2
                 if selected:
@@ -1551,13 +1623,12 @@ class WeComSynthesizer(object):
                     pad = 2
                     labels.append((cls_id, ix - pad, iy - pad,
                                    ix + icon_sz + pad, iy + icon_sz + pad))
-                y += cell_h
+                y += step
 
-        more_y = H - 48
         # 窄栏底部次级入口：微盘 / 高级功能 / 分组（分组 = CLS_NAV_GROUPS）
+        # 随机子集 + 顺序；空间不够时优先保留「分组」
         if (not wide) and sc.get('show_nav_groups', True):
-            # 主项过长时仍尽量挤出「分组」
-            bot_items = [
+            bot_catalog = [
                 ('wedrive', '微盘', None,
                  'nav_wedrive.png', 'nav_wedrive_selected.png', 'nav_wedrive_selected_white.png'),
                 ('advanced', '高级功能', None,
@@ -1565,17 +1636,28 @@ class WeComSynthesizer(object):
                 ('groups', '分组', CLS_NAV_GROUPS,
                  'nav_convtag.png', 'nav_convtag_selected.png', 'nav_convtag_selected_white.png'),
             ]
-            # 空间不够时只保留「分组」
-            need = 56 * len(bot_items)
+            # random presence: always try to keep groups if show_nav_groups; others ~60%
+            bot_items = []
+            for bi in bot_catalog:
+                if bi[0] == 'groups':
+                    bot_items.append(bi)
+                elif self.rng.random() < 0.6:
+                    bot_items.append(bi)
+            self.rng.shuffle(bot_items)
+            # ensure groups is present (may have been only one)
+            if not any(b[0] == 'groups' for b in bot_items):
+                bot_items.append(bot_catalog[-1])
+            bot_cell_h = self.rng.randint(48, 56)
+            # if space tight, keep only groups
+            need = bot_cell_h * len(bot_items)
             if y + need >= more_y:
-                bot_items = [bot_items[-1]]
-            if y + 50 < more_y:
-                y += 6
+                bot_items = [b for b in bot_items if b[0] == 'groups']
+            if y + 50 < more_y and bot_items:
+                y += self.rng.randint(4, 10)
                 bot_icon_sz = 22
                 for key, text, cls_id, icon_normal, icon_sel_blue, icon_sel_white in bot_items:
                     if y + 50 >= more_y:
                         break
-                    cell_h = 52
                     cell_w = nav_w - 4
                     cx0 = 2
                     selected = False
@@ -1593,7 +1675,7 @@ class WeComSynthesizer(object):
                         pad = 2
                         labels.append((cls_id, ix - pad, iy - pad,
                                        ix + bot_icon_sz + pad, iy + bot_icon_sz + pad))
-                    y += cell_h
+                    y += bot_cell_h
 
         # 宽栏「分组」标题：标签图标 + 文案，标为 nav_groups_icon
         if wide and sc.get('show_groups', False) and y + 110 < more_y:
