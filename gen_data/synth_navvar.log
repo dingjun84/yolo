@@ -1,0 +1,127 @@
+Generating 1000 images -> D:\staff_01\WS_WorkBuddy\yolo\gen_data\out_navvar_1000
+  [1/1000] wxsyn_00000  1125x697  labels=14  page=contacts nav=wide preset=contacts_profile
+  [10/1000] wxsyn_00009  1094x742  labels=20  page=chat nav=narrow preset=-
+  [20/1000] wxsyn_00019  1286x653  labels=15  page=chat nav=wide preset=-
+  [30/1000] wxsyn_00029  1299x769  labels=8  page=contacts nav=narrow preset=contacts_customers
+  [40/1000] wxsyn_00039  1200x725  labels=9  page=contacts nav=narrow preset=contacts_customers
+  [50/1000] wxsyn_00049  971x600  labels=7  page=forward_dialog nav=narrow preset=forward_dialog
+  [60/1000] wxsyn_00059  1247x785  labels=22  page=chat nav=narrow preset=-
+  [70/1000] wxsyn_00069  921x877  labels=22  page=chat nav=wide preset=-
+  [80/1000] wxsyn_00079  1273x593  labels=14  page=chat nav=narrow preset=-
+  [90/1000] wxsyn_00089  1236x804  labels=17  page=chat nav=wide preset=-
+  [100/1000] wxsyn_00099  871x1083  labels=11  page=chat nav=wide preset=-
+  [110/1000] wxsyn_00109  924x868  labels=25  page=chat nav=wide preset=-
+  [120/1000] wxsyn_00119  1287x825  labels=32  page=chat nav=wide preset=chat_wide_groups
+  [130/1000] wxsyn_00129  1322x600  labels=6  page=chat nav=wide preset=-
+  [140/1000] wxsyn_00139  1317x818  labels=10  page=contacts nav=narrow preset=contacts_customers
+  [150/1000] wxsyn_00149  1108x665  labels=11  page=chat nav=narrow preset=-
+  [160/1000] wxsyn_00159  1167x685  labels=19  page=chat nav=narrow preset=chat_narrow
+  [170/1000] wxsyn_00169  925x1081  labels=18  page=chat nav=narrow preset=-
+  [180/1000] wxsyn_00179  917x581  labels=11  page=chat nav=narrow preset=-
+  [190/1000] wxsyn_00189  1228x629  labels=23  page=chat nav=narrow preset=-
+  [200/1000] wxsyn_00199  1168x682  labels=24  page=chat nav=narrow preset=chat_narrow
+  [210/1000] wxsyn_00209  1231x774  labels=8  page=contacts nav=narrow preset=contacts_customers
+  [220/1000] wxsyn_00219  1094x913  labels=24  page=contacts nav=narrow preset=-
+  [230/1000] wxsyn_00229  1250x887  labels=8  page=contacts nav=narrow preset=contacts_customers
+  [240/1000] wxsyn_00239  1130x849  labels=8  page=contacts nav=narrow preset=contacts_customers
+  [250/1000] wxsyn_00249  1081x710  labels=7  page=contacts nav=narrow preset=contacts_customers
+  [260/1000] wxsyn_00259  798x520  labels=7  page=forward_dialog nav=narrow preset=forward_dialog
+  [270/1000] wxsyn_00269  1254x710  labels=9  page=contacts nav=narrow preset=contacts_customers
+  [280/1000] wxsyn_00279  1395x627  labels=16  page=chat nav=wide preset=-
+  [290/1000] wxsyn_00289  1400x901  labels=9  page=contacts nav=wide preset=contacts_search
+  [300/1000] wxsyn_00299  1101x714  labels=10  page=contacts nav=narrow preset=contacts_customers
+  [310/1000] wxsyn_00309  970x623  labels=27  page=chat nav=wide preset=-
+  [320/1000] wxsyn_00319  960x739  labels=9  page=chat nav=wide preset=-
+  [330/1000] wxsyn_00329  1186x1000  labels=15  page=chat nav=wide preset=-
+  [340/1000] wxsyn_00339  1136x845  labels=14  page=contacts nav=wide preset=contacts_profile
+  [350/1000] wxsyn_00349  1306x849  labels=26  page=chat nav=wide preset=-
+  [360/1000] wxsyn_00359  1348x731  labels=27  page=chat nav=wide preset=chat_wide_groups
+  [370/1000] wxsyn_00369  1243x961  labels=24  page=chat nav=narrow preset=-
+  [380/1000] wxsyn_00379  1288x867  labels=28  page=chat nav=wide preset=-
+  [390/1000] wxsyn_00389  1017x681  labels=13  page=chat nav=narrow preset=-
+  [400/1000] wxsyn_00399  1292x783  labels=9  page=contacts nav=narrow preset=contacts_customers
+  [410/1000] wxsyn_00409  1187x854  labels=33  page=chat nav=wide preset=chat_wide
+  [420/1000] wxsyn_00419  1102x765  labels=10  page=chat nav=narrow preset=-
+  [430/1000] wxsyn_00429  1244x792  labels=20  page=chat nav=wide preset=chat_wide_groups
+  [440/1000] wxsyn_00439  1136x779  labels=24  page=chat nav=narrow preset=chat_dark
+  [450/1000] wxsyn_00449  1308x807  labels=9  page=contacts nav=narrow preset=contacts_customers
+  [460/1000] wxsyn_00459  970x589  labels=8  page=chat nav=wide preset=-
+  [470/1000] wxsyn_00469  1287x858  labels=29  page=chat nav=wide preset=chat_wide_groups
+  [480/1000] wxsyn_00479  1296x634  labels=17  page=chat nav=narrow preset=-
+  [490/1000] wxsyn_00489  1056x607  labels=6  page=forward_dialog nav=narrow preset=forward_dialog
+  [500/1000] wxsyn_00499  1266x875  labels=8  page=contacts nav=narrow preset=contacts_customers
+  [510/1000] wxsyn_00509  1336x864  labels=10  page=contacts nav=narrow preset=contacts_customers
+  [520/1000] wxsyn_00519  1206x736  labels=7  page=contacts nav=narrow preset=contacts_customers
+  [530/1000] wxsyn_00529  1022x719  labels=24  page=chat nav=narrow preset=chat_narrow
+  [540/1000] wxsyn_00539  1276x818  labels=19  page=chat nav=wide preset=chat_wide
+  [550/1000] wxsyn_00549  1389x786  labels=8  page=chat nav=narrow preset=-
+  [560/1000] wxsyn_00559  1356x660  labels=7  page=chat nav=narrow preset=-
+  [570/1000] wxsyn_00569  1244x791  labels=14  page=chat nav=wide preset=chat_dark
+  [580/1000] wxsyn_00579  947x984  labels=21  page=chat nav=wide preset=-
+  [590/1000] wxsyn_00589  1041x526  labels=8  page=forward_dialog nav=narrow preset=forward_dialog
+  [600/1000] wxsyn_00599  1300x953  labels=8  page=chat nav=narrow preset=-
+  [610/1000] wxsyn_00609  1004x676  labels=18  page=contacts nav=narrow preset=-
+  [620/1000] wxsyn_00619  1043x645  labels=25  page=chat nav=narrow preset=chat_narrow
+  [630/1000] wxsyn_00629  1060x591  labels=8  page=forward_dialog nav=narrow preset=forward_dialog
+  [640/1000] wxsyn_00639  1247x855  labels=20  page=chat nav=wide preset=chat_wide_groups
+  [650/1000] wxsyn_00649  1398x815  labels=14  page=contacts nav=narrow preset=contacts_profile
+  [660/1000] wxsyn_00659  1376x840  labels=27  page=chat nav=wide preset=chat_wide
+  [670/1000] wxsyn_00669  1345x797  labels=8  page=contacts nav=narrow preset=contacts_customers
+  [680/1000] wxsyn_00679  1068x734  labels=21  page=chat nav=narrow preset=chat_dark
+  [690/1000] wxsyn_00689  1295x862  labels=10  page=contacts nav=narrow preset=contacts_customers
+  [700/1000] wxsyn_00699  1031x613  labels=12  page=chat nav=narrow preset=-
+  [710/1000] wxsyn_00709  1114x676  labels=19  page=chat nav=wide preset=-
+  [720/1000] wxsyn_00719  1293x727  labels=23  page=chat nav=wide preset=chat_wide
+  [730/1000] wxsyn_00729  952x1093  labels=26  page=chat nav=narrow preset=-
+  [740/1000] wxsyn_00739  1271x799  labels=25  page=chat nav=wide preset=chat_wide
+  [750/1000] wxsyn_00749  1113x778  labels=8  page=contacts nav=narrow preset=contacts_customers
+  [760/1000] wxsyn_00759  1036x607  labels=6  page=forward_dialog nav=narrow preset=forward_dialog
+  [770/1000] wxsyn_00769  1467x652  labels=10  page=chat nav=narrow preset=-
+  [780/1000] wxsyn_00779  1038x843  labels=26  page=chat nav=wide preset=-
+  [790/1000] wxsyn_00789  1113x700  labels=12  page=chat nav=narrow preset=chat_narrow
+  [800/1000] wxsyn_00799  1170x880  labels=9  page=contacts nav=narrow preset=contacts_customers
+  [810/1000] wxsyn_00809  1320x641  labels=17  page=chat nav=narrow preset=-
+  [820/1000] wxsyn_00819  1328x731  labels=8  page=contacts nav=narrow preset=contacts_customers
+  [830/1000] wxsyn_00829  1337x590  labels=11  page=contacts nav=narrow preset=-
+  [840/1000] wxsyn_00839  993x862  labels=23  page=chat nav=wide preset=-
+  [850/1000] wxsyn_00849  1325x709  labels=9  page=contacts nav=narrow preset=contacts_customers
+  [860/1000] wxsyn_00859  1224x580  labels=23  page=chat nav=narrow preset=-
+  [870/1000] wxsyn_00869  743x579  labels=6  page=forward_dialog nav=narrow preset=forward_dialog
+  [880/1000] wxsyn_00879  919x934  labels=16  page=chat nav=wide preset=-
+  [890/1000] wxsyn_00889  1194x706  labels=16  page=chat nav=narrow preset=chat_narrow
+  [900/1000] wxsyn_00899  985x862  labels=23  page=chat nav=narrow preset=-
+  [910/1000] wxsyn_00909  995x706  labels=14  page=chat nav=wide preset=-
+  [920/1000] wxsyn_00919  1304x675  labels=14  page=contacts nav=narrow preset=contacts_profile_dark
+  [930/1000] wxsyn_00929  1319x833  labels=17  page=contacts nav=wide preset=contacts_profile
+  [940/1000] wxsyn_00939  1295x796  labels=11  page=contacts nav=narrow preset=contacts_profile_dark
+  [950/1000] wxsyn_00949  845x984  labels=10  page=contacts nav=wide preset=-
+  [960/1000] wxsyn_00959  955x978  labels=24  page=chat nav=wide preset=-
+  [970/1000] wxsyn_00969  1044x962  labels=29  page=chat nav=wide preset=-
+  [980/1000] wxsyn_00979  1345x750  labels=8  page=contacts nav=narrow preset=contacts_customers
+  [990/1000] wxsyn_00989  1272x731  labels=11  page=contacts nav=narrow preset=contacts_search
+  [1000/1000] wxsyn_00999  1149x673  labels=21  page=chat nav=narrow preset=chat_dark
+
+Synthetic WeCom label report
+out: D:\staff_01\WS_WorkBuddy\yolo\gen_data\out_navvar_1000
+images: 1000  (empty labels: 0)
+total boxes: 14947
+
+id    name                             count    share
+----------------------------------------------------
+0     self_avatar                        962     6.4%
+1     nav_chat_icon                      909     6.1%
+2     nav_contacts_icon                  889     5.9%
+3     search_bar                        1000     6.7%
+4     list_item                         5845    39.1%
+5     send_button                        507     3.4%
+6     incoming_bubble                   1358     9.1%
+7     outgoing_bubble                   1303     8.7%
+8     input_bar                          507     3.4%
+9     single_chat                        312     2.1%
+10    group_chat                         308     2.1%
+11    contact_send_message               178     1.2%
+12    nav_groups_icon                    869     5.8%
+
+missing (0 boxes): none
+Wrote D:\staff_01\WS_WorkBuddy\yolo\gen_data\out_navvar_1000\label_report.txt
+Done. Wrote D:\staff_01\WS_WorkBuddy\yolo\gen_data\out_navvar_1000\data_synth.yaml (images+labels side-by-side)

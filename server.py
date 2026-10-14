@@ -25,6 +25,13 @@
     python server.py                        # 0.0.0.0:8080
     python server.py --port 8080 --conf 0.3
     python server.py --host 127.0.0.1       # 只允许本机访问
+    python server.py --device cpu           # 强制 CPU
+    python server.py --device 0             # 指定第 0 块 GPU
+
+关于 device:
+    默认 auto —— 有 CUDA 就用 GPU，没有退 CPU。YOLO 和 OCR 都跟随这一个开关。
+    显式写 cuda / 0 而 CUDA 不可用时**直接报错退出**，不会静默退回 CPU：
+    跑错设备是这个服务最该避免的失败方式（CPU 上单张 300ms，GPU 上快一个量级）。
 
 关于 imgsz:
     这个权重是 data_wxwork.yaml 上用 imgsz=1280 训出来的（runs/train/wxwork_ui/args.yaml）。
@@ -49,6 +56,7 @@ import json
 import os
 import platform
 import socket
+import sys
 import threading
 import time
 import urllib.request
@@ -106,6 +114,163 @@ def schema_of(names: dict[int, str]) -> str:
 # imgsz=1280 必须与训练分辨率一致（runs/train/wxwork_ui/args.yaml: imgsz=1280），
 # 不是可调的性能旋钮 —— 降到 640 会大面积漏检，详见文件头部说明
 DEFAULTS: dict = {"conf": 0.25, "iou": 0.7, "imgsz": 1280, "max_det": 300}
+
+
+# --------------------------------------------------------------------------
+# 推理设备（CPU / CUDA）
+# --------------------------------------------------------------------------
+# 由 main() / make_app() 解析 --device / --ocr-device 后填充。
+# DEVICE 是直接传给 ultralytics 的值（"cpu" 或 GPU 序号 "0"），
+# DEVICE_LABEL 是给 /health 和启动日志看的人类可读串。
+DEVICE: str = "cpu"
+DEVICE_LABEL: str = "cpu"
+
+# OCR 走独立的设备开关，不再跟着 YOLO 走。原因是有实测数据撑着的：
+# PP-OCRv4 的三个子模型（det/cls/rec）都只有几十 MB，在 GTX 1660 这类小卡上
+# 走 CUDA **反而慢 2~3 倍** —— 算得动的部分本来就没多少，收益全被
+# 主机↔显存搬运和 cuDNN 首次 autotune 吃掉了。所以默认 CPU。
+# 想强制 GPU：serve.cmd --ocr-device gpu（前提是 setup.cmd --cuda-ocr 装过
+# onnxruntime-gpu + nvidia-*-cu12）。
+OCR_DEVICE: str = "cpu"          # "cpu" 或 "cuda"（传成 bool 给 rapidocr）
+OCR_DEVICE_LABEL: str = "cpu"
+NVIDIA_DLL_DIRS: list[str] = []
+
+
+def register_nvidia_dlls() -> list[str]:
+    """把 pip 装的 nvidia-*-cu12 轮子里的 DLL 目录挂进搜索路径（仅 Windows）。
+
+    onnxruntime-gpu 在 Windows 上**不会**主动去 site-packages/nvidia/*/bin 里找
+    cuDNN / cuBLAS / cudart，必须先 add_dll_directory，否则 CUDAExecutionProvider
+    创建失败、ORT 静默退回 CPU —— 不报错，只是慢，很容易查半天。
+    torch 自带 CUDA 运行时，不受影响，这一步纯粹是给 OCR 铺路。
+
+    ⚠️ 必须在 `import torch` **之后**调用。torch 和 onnxruntime 各自带一份
+    cudnn64_9.dll，谁先加载谁占坑：先把 nvidia 目录塞进 PATH、再让 torch 去加载
+    它自带的那份，会因符号对不上直接 WinError 127。本模块在顶层 `import torch`，
+    所以 main() 里调用是安全的 —— 动结构时别把顺序弄反了。
+    """
+    if os.name != "nt":
+        return []
+    import site as _site
+
+    roots: list[Path] = []
+    try:
+        roots.extend(Path(p) for p in _site.getsitepackages())
+    except Exception:
+        pass
+    try:
+        roots.append(Path(_site.getusersitepackages()))
+    except Exception:
+        pass
+    roots.append(Path(sys.prefix) / "Lib" / "site-packages")
+
+    added: list[str] = []
+    for root in roots:
+        nv = root / "nvidia"
+        if not nv.is_dir():
+            continue
+        for bin_dir in sorted(nv.glob("*/bin")):
+            if not bin_dir.is_dir():
+                continue
+            s = str(bin_dir)
+            if s in added:
+                continue
+            try:
+                os.add_dll_directory(s)  # Windows 3.8+，其它平台无此函数
+            except (AttributeError, OSError):
+                pass
+            os.environ["PATH"] = s + os.pathsep + os.environ.get("PATH", "")
+            added.append(s)
+    return added
+
+
+def resolve_device(spec: str) -> tuple[str, str]:
+    """把 --device 规范化成 (传给 ultralytics 的值, 人类可读标签)。
+
+    auto                      有 CUDA 用 0，否则 cpu
+    cpu                       强制 CPU
+    cuda / gpu / 0 / cuda:1   指定 GPU；显式要 GPU 但 CUDA 不可用时直接报错，
+                              不静默退回 CPU
+    """
+    s = (spec or "auto").strip().lower()
+    if s in ("", "auto"):
+        if torch.cuda.is_available():
+            i = torch.cuda.current_device()
+            return str(i), f"cuda:{i} ({torch.cuda.get_device_name(i)})"
+        return "cpu", "cpu"
+    if s == "cpu":
+        return "cpu", "cpu"
+
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            f"指定了 device={spec}，但 torch 看不到 CUDA（torch.cuda.is_available()=False）。\n"
+            f"  torch {torch.__version__} / CUDA build {torch.version.cuda}\n"
+            "  排查：先跑 python tools/check_gpu.py，再确认 nvidia-smi 正常。"
+        )
+
+    if s in ("cuda", "gpu"):
+        idx = 0
+    else:
+        try:
+            idx = int(s.split(":")[-1])
+        except ValueError as e:
+            raise RuntimeError(
+                f"无法解析 device={spec!r}，可用写法：auto / cpu / 0 / cuda:1"
+            ) from e
+
+    n = torch.cuda.device_count()
+    if not 0 <= idx < n:
+        raise RuntimeError(f"device={spec!r} 越界：本机只有 {n} 块 CUDA 设备（序号 0–{n - 1}）")
+    return str(idx), f"cuda:{idx} ({torch.cuda.get_device_name(idx)})"
+
+
+def resolve_ocr_device(spec: str) -> tuple[str, str]:
+    """把 --ocr-device 规范化成 (rapidocr 用的值, 人类可读标签)。
+
+    cpu           OCR 跑 CPU（默认）
+    gpu / cuda / auto
+                  要 GPU；auto 时没有 CUDA 就安静退回 CPU（OCR 是可选项，
+                 不该因为没显卡就起不来），gpu/cuda 显式指定则报错。
+    """
+    s = (spec or "cpu").strip().lower()
+    if s == "cpu":
+        return "cpu", "cpu"
+    if s in ("auto", ""):
+        if not torch.cuda.is_available():
+            return "cpu", "cpu"
+    elif not torch.cuda.is_available():
+        raise RuntimeError(
+            f"指定了 ocr-device={spec}，但 torch 看不到 CUDA。\n"
+            "  不想要 GPU 就别加这个参数（OCR 默认就是 CPU）。"
+        )
+
+    try:
+        import onnxruntime as ort
+
+        if "CUDAExecutionProvider" not in ort.get_available_providers():
+            raise RuntimeError(
+                "当前 onnxruntime 没有 CUDAExecutionProvider（装的是 CPU 版）。\n"
+                "  启用方式：重新跑 setup.cmd --cuda-ocr，它会装 onnxruntime-gpu "
+                "和 nvidia-*-cu12 运行库。"
+            )
+    except ImportError as e:
+        raise RuntimeError(f"onnxruntime 不可用：{e}") from e
+
+    return "cuda", f"cuda:0 ({torch.cuda.get_device_name(0)})"
+
+
+def default_model_path() -> Path:
+    """默认权重。
+
+    项目里这个文件改过名（wxwork -> wxchat），硬编码一个名字必然在某一台上扑空，
+    所以按已知名依次探测，都不在就回退第一个候选（报错信息里会列出 weights/ 里
+    实际有什么）。
+    """
+    wdir = ROOT / "weights"
+    for name in ("yolo26n_detect_wxchat.pt", "yolo26n_detect_wxwork.pt"):
+        if (wdir / name).exists():
+            return wdir / name
+    return wdir / "yolo26n_detect_wxchat.pt"
 
 
 # --------------------------------------------------------------------------
@@ -201,7 +366,7 @@ def run_inference(img: np.ndarray, params: dict):
             iou=params["iou"],
             imgsz=params["imgsz"],
             max_det=params["max_det"],
-            device="cpu",
+            device=DEVICE,
             verbose=False,
         )
     return results[0]
@@ -305,13 +470,81 @@ def quad_to_xywh(box) -> tuple[int, int, int, int]:
     )
 
 
+def _find_sessions(obj, depth: int = 0, seen: set | None = None) -> list:
+    """在对象图里递归捞出所有 onnxruntime.InferenceSession。"""
+    seen = set() if seen is None else seen
+    if id(obj) in seen or depth > 4:
+        return []
+    seen.add(id(obj))
+    if hasattr(obj, "get_providers") and hasattr(obj, "get_inputs"):
+        return [obj]
+    found: list = []
+    for v in (vars(obj).values() if hasattr(obj, "__dict__") else []):
+        if isinstance(v, (str, bytes, int, float, bool, type(None))):
+            continue
+        if isinstance(v, dict):
+            items = list(v.values())
+        elif isinstance(v, (list, tuple, set)):
+            items = list(v)
+        else:
+            items = [v]
+        for x in items:
+            found.extend(_find_sessions(x, depth + 1, seen))
+    return found
+
+
+def ocr_providers() -> dict[str, list[str]]:
+    """RapidOCR 每个子模型**真正生效**的 provider。
+
+    ⚠️ 别拿 ort.get_available_providers() 当「GPU 可用」的证据：它只反映 provider
+    有没有**编译进来**，不代表 CUDA EP 能加载成功。实测踩过这个坑 —— 装上对着
+    CUDA 13 编的 onnxruntime-gpu 时它照样返回 'CUDAExecutionProvider'，但 session
+    根本起不来，静默回退 CPU，接口全绿却没有一点加速。这里读 session.get_providers()，
+    是能证伪的。
+    """
+    if OCR_ENGINE is None:
+        return {}
+    out: dict[str, list[str]] = {}
+    for part in ("text_det", "text_cls", "text_rec"):
+        mod = getattr(OCR_ENGINE, part, None)
+        if mod is None:
+            continue
+        sess = _find_sessions(mod)
+        if sess:
+            out[part] = list(sess[0].get_providers())
+    return out
+
+
 def get_ocr():
     """第一次调用才加载 RapidOCR，避免和正在跑的训练抢启动。"""
     global OCR_ENGINE
     if OCR_ENGINE is None:
         from rapidocr_onnxruntime import RapidOCR
 
-        OCR_ENGINE = RapidOCR()
+        kwargs: dict = {}
+        if OCR_DEVICE != "cpu":
+            # rapidocr_onnxruntime 把这三个开关透给 onnxruntime 的 CUDAExecutionProvider。
+            # 前提是装了 onnxruntime-gpu（不是 onnxruntime），并且 nvidia-*-cu12 的
+            # DLL 目录已经挂上 —— 见 register_nvidia_dlls()。
+            kwargs = {"det_use_cuda": True, "cls_use_cuda": True, "rec_use_cuda": True}
+        try:
+            OCR_ENGINE = RapidOCR(**kwargs)
+        except TypeError:
+            # 这个版本的 rapidocr 不认 *_use_cuda 参数：退回默认构造，此时由
+            # onnxruntime 自己按 provider 优先级挑 —— 装了 onnxruntime-gpu 的话仍是 GPU。
+            print("[OCR] 该版 rapidocr_onnxruntime 不支持 *_use_cuda 参数，"
+                  "改用 onnxruntime 默认 provider 顺序")
+            OCR_ENGINE = RapidOCR()
+
+        provs = ocr_providers()
+        print(f"[OCR] RapidOCR 就绪（{OCR_DEVICE_LABEL}），各子模型 provider = {provs}")
+        if OCR_DEVICE != "cpu":
+            flat = {p for v in provs.values() for p in v} if provs else set()
+            if "CUDAExecutionProvider" not in flat:
+                print("[警告] 请求了 GPU，但 OCR 的 onnxruntime session 没起来 "
+                      "CUDAExecutionProvider，实际跑在 CPU 上。")
+                print("       排查：<环境>\\python.exe tools\\check_gpu.py "
+                      "（它会指出缺哪个 CUDA DLL / 版本对不上）")
     return OCR_ENGINE
 
 
@@ -381,14 +614,23 @@ def health():
         "nc": len(CLASS_NAMES),
         "classes": CLASS_NAMES,
         "schema": schema_of(CLASS_NAMES),
-        "device": "cpu",
+        "device": DEVICE_LABEL,
         "torch": torch.__version__,
+        "cuda": torch.version.cuda,
+        "cuda_available": torch.cuda.is_available(),
+        "cuda_device_count": torch.cuda.device_count(),
         "defaults": DEFAULTS,
         "uptime_sec": round(time.time() - START_TS, 1),
         "host": socket.gethostname(),
         "ocr": {
             "engine": "rapidocr-onnxruntime",
             "loaded": OCR_ENGINE is not None,
+            "device": OCR_DEVICE_LABEL,
+            # 各子模型 session 的**真实** provider，不是「编译进来哪些」
+            "providers": ocr_providers(),
+            "on_gpu": any(
+                "CUDAExecutionProvider" in v for v in ocr_providers().values()
+            ),
         },
     })
 
@@ -679,13 +921,17 @@ def local_ips() -> list[str]:
         s.close()
     except Exception:
         pass
-    for name in ("en0", "en1"):
-        try:
-            for line in os.popen(f"ipconfig getifaddr {name}").read().split():
-                if line not in ips:
-                    ips.append(line)
-        except Exception:
-            pass
+    # 下面这步是 macOS 专用（ipconfig getifaddr 是 Darwin 的接口）。
+    # Windows 上 `ipconfig getifaddr en0` 只会吐一段 usage 文本，
+    # split() 之后会把 "Windows" / "IP" 这种词当 IP 塞进启动横幅里。
+    if os.name != "nt":
+        for name in ("en0", "en1"):
+            try:
+                for line in os.popen(f"ipconfig getifaddr {name}").read().split():
+                    if line not in ips:
+                        ips.append(line)
+            except Exception:
+                pass
     return ips
 
 
@@ -730,51 +976,80 @@ def make_app():
         waitress-serve --host 0.0.0.0 --port 8080 --call server:make_app
 
     配置一律走环境变量（生产服务器没法传 CLI 参数）：
-        YOLO26_MODEL  权重路径
+        YOLO26_MODEL      权重路径
+        YOLO26_DEVICE     YOLO 设备，默认 auto（cpu / auto / 0 / cuda:1）
+        YOLO26_OCR_DEVICE OCR 设备，默认 cpu（cpu / gpu / auto）
         YOLO26_IMGSZ / YOLO26_CONF / YOLO26_IOU / YOLO26_MAX_DET
     """
-    global DEFAULTS
+    global DEFAULTS, DEVICE, DEVICE_LABEL, OCR_DEVICE, OCR_DEVICE_LABEL
     DEFAULTS = {
         "conf": float(os.environ.get("YOLO26_CONF", 0.25)),
         "iou": float(os.environ.get("YOLO26_IOU", 0.7)),
         "imgsz": int(os.environ.get("YOLO26_IMGSZ", 1280)),
         "max_det": int(os.environ.get("YOLO26_MAX_DET", 300)),
     }
-    load_model(os.environ.get("YOLO26_MODEL", str(ROOT / "weights" / "yolo26n_detect_wxchat.pt")))
+    DEVICE, DEVICE_LABEL = resolve_device(os.environ.get("YOLO26_DEVICE", "auto"))
+    OCR_DEVICE, OCR_DEVICE_LABEL = resolve_ocr_device(os.environ.get("YOLO26_OCR_DEVICE", "cpu"))
+    if OCR_DEVICE != "cpu":
+        register_nvidia_dlls()
+    load_model(os.environ.get("YOLO26_MODEL", str(default_model_path())))
     warmup()
     return app
 
 
 def warmup():
-    """预跑一次真实尺寸的推理，把 JIT / MKL 初始化的开销挡在首个真实请求之外。"""
+    """预跑一次真实尺寸的推理，把 JIT / CUDA context / MKL 初始化的开销挡在首个真实请求之外。"""
     try:
         size = DEFAULTS["imgsz"]
         dummy = np.zeros((size, size, 3), dtype=np.uint8)
         t0 = time.time()
         with INFER_LOCK:
-            MODEL.predict(source=dummy, imgsz=size, device="cpu", verbose=False)
-        print(f"[warmup] 完成（imgsz={size}），耗时 {time.time() - t0:.2f}s")
+            MODEL.predict(source=dummy, imgsz=size, device=DEVICE, verbose=False)
+        print(f"[warmup] 完成（device={DEVICE_LABEL}, imgsz={size}），耗时 {time.time() - t0:.2f}s")
     except Exception as e:
         print(f"[warmup] 跳过（{e}）")
 
 
 def main() -> int:
     global MODEL, MODEL_PATH, CLASS_NAMES, DEFAULTS
+    global DEVICE, DEVICE_LABEL, OCR_DEVICE, OCR_DEVICE_LABEL
 
     p = argparse.ArgumentParser(description="YOLO26 企业微信 UI 元素检测推理服务")
-    p.add_argument("--model", default=str(ROOT / "weights" / "yolo26n_detect_wxwork.pt"))
+    p.add_argument("--model", default=str(default_model_path()))
     p.add_argument("--host", default="0.0.0.0", help="监听地址，0.0.0.0 表示所有网卡（外网/局域网可访问）")
     p.add_argument("--port", type=int, default=8080)
     p.add_argument("--imgsz", type=int, default=1280, help="推理分辨率，默认 1280（截图小目标不能降）")
     p.add_argument("--conf", type=float, default=0.25)
     p.add_argument("--iou", type=float, default=0.7)
-    p.add_argument("--threads", type=int, default=0, help="torch 线程数，0 表示用默认值")
+    p.add_argument("--device", default="auto",
+                   help="YOLO 推理设备：auto（默认，有 CUDA 就用）/ cpu / 0 / cuda:1")
+    p.add_argument("--ocr-device", default="cpu",
+                   help="OCR 推理设备：cpu（默认，实测比 GPU 快）/ gpu / auto。"
+                        "用 gpu 需要 setup.cmd --cuda-ocr 装过的运行库")
+    p.add_argument("--threads", type=int, default=0, help="torch 线程数，0 表示用默认值（仅 CPU 有意义）")
     p.add_argument("--no-warmup", action="store_true")
     args = p.parse_args()
 
     if not Path(args.model).exists():
         print(f"[错误] 权重不存在: {args.model}")
+        avail = sorted((ROOT / "weights").glob("*.pt"))
+        if avail:
+            print("       weights/ 里现有：")
+            for f in avail:
+                print(f"         - {f.name}")
+        else:
+            print("       weights/ 目录是空的，先把训练好的权重放进去")
         return 2
+
+    # 顺序有讲究：torch 已在模块顶层 import（自带 CUDA 运行时已加载完），
+    # 这里再把 nvidia 目录挂上给 onnxruntime 用 —— 反过来会让 torch 加载失败，
+    # 详见 register_nvidia_dlls 的 docstring。
+    # 只有 OCR 真要走 GPU 时才挂：OCR 在 CPU 上时挂这些目录纯属给 torch 添乱
+    # （两边各带一份 cudnn64_9.dll）。
+    DEVICE, DEVICE_LABEL = resolve_device(args.device)
+    OCR_DEVICE, OCR_DEVICE_LABEL = resolve_ocr_device(args.ocr_device)
+    if OCR_DEVICE != "cpu":
+        NVIDIA_DLL_DIRS.extend(register_nvidia_dlls())
 
     if args.threads > 0:
         torch.set_num_threads(args.threads)
@@ -782,7 +1057,20 @@ def main() -> int:
     DEFAULTS = {"conf": args.conf, "iou": args.iou, "imgsz": args.imgsz, "max_det": 300}
 
     print(f"Python  {platform.python_version()} ({platform.machine()})")
-    print(f"torch   {torch.__version__}  线程 {torch.get_num_threads()}")
+    print(f"torch   {torch.__version__}  CUDA build {torch.version.cuda}")
+    print(f"device  {DEVICE_LABEL}")
+    if DEVICE != "cpu":
+        free, total = torch.cuda.mem_get_info(int(DEVICE))
+        print(f"        显存 {free / 2**20:.0f} MiB 可用 / {total / 2**20:.0f} MiB 总量")
+    elif torch.cuda.is_available() and args.device == "cpu":
+        print("        （CUDA 可用但被 --device cpu 显式关掉了）")
+    else:
+        print("        （看不到 CUDA，YOLO 走 CPU）")
+    print(f"device  OCR → {OCR_DEVICE_LABEL}")
+    if NVIDIA_DLL_DIRS:
+        print(f"        已挂载 {len(NVIDIA_DLL_DIRS)} 个 nvidia DLL 目录（给 ORT 用）")
+    if args.threads == 0 and DEVICE == "cpu":
+        print(f"torch   线程 {torch.get_num_threads()}")
     load_model(args.model)
 
     if not args.no_warmup:

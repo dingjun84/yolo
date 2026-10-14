@@ -127,11 +127,21 @@ curl http://192.168.1.22:8080/health
   "nc": 13,
   "classes": {"0": "self_avatar", "1": "nav_chat_icon", "...": "..."},
   "schema": "c13",
-  "device": "cpu",
+  "device": "cuda:0 (NVIDIA GeForce GTX 1660)",
   "torch": "2.13.0",
+  "cuda": "12.8",
+  "cuda_available": true,
+  "cuda_device_count": 1,
   "defaults": {"conf": 0.25, "iou": 0.7, "imgsz": 1280, "max_det": 300},
   "uptime_sec": 312.5,
-  "host": "xxx.local"
+  "host": "xxx.local",
+  "ocr": {
+    "engine": "rapidocr-onnxruntime",
+    "loaded": true,
+    "device": "cpu",
+    "providers": {"text_det": ["CPUExecutionProvider"], "text_cls": ["CPUExecutionProvider"], "text_rec": ["CPUExecutionProvider"]},
+    "on_gpu": false
+  }
 }
 ```
 
@@ -141,7 +151,17 @@ curl http://192.168.1.22:8080/health
 | `nc` | int | 类别数 |
 | `classes` | object | id → 类别名（取自当前权重） |
 | `schema` | string | `c13`（与项目口径一致的 13 类权重）/ `custom`（其它） |
+| `device` | string | **YOLO** 的实际设备，GPU 时形如 `cuda:0 (显卡名)` |
 | `defaults` | object | 服务端默认推理参数 |
+| `ocr.device` | string | **OCR** 的设备，默认 `cpu` |
+| `ocr.providers` | object | 各子模型 session 的**真实** provider（不是「编译进来哪些」） |
+| `ocr.on_gpu` | bool | OCR 是否跑在 CUDA 上 |
+
+> **设备分工说明**：YOLO 默认用 GPU，**OCR 默认走 CPU，且这是有意为之**。
+> 在 GTX 1660 这类 6GB 小卡上实测，PP-OCRv4 走 CUDA 反而**慢 2–3 倍**——
+> 三个子模型都只有几十 MB，收益全被主机↔显存搬运和 cuDNN 首次 autotune 吃掉。
+> 换大显卡或想自己验证：`python tools/check_gpu.py --bench`，
+> 再决定是否 `serve.cmd --ocr-device gpu`（需先 `setup.cmd --cuda-ocr`）。
 
 ---
 

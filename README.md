@@ -235,6 +235,57 @@ yolo val     model=runs/train/smoke/weights/best.pt data=coco8.yaml device=cpu
 yolo export  model=yolo26n.pt format=onnx imgsz=640   # Intel Mac 可导出 ONNX / OpenVINO
 ```
 
+## Windows + CUDA（GTX 1660 实机验证）
+
+Windows 上不用 `init.sh` / `serve.sh`，走两个 `.cmd`（内容为 **GBK + CRLF**，
+cmd.exe 读 UTF-8 批处理会字节错位，中文别改存成 UTF-8）。
+
+```cmd
+setup.cmd              :: 在项目目录建 .conda\envs\yolo26 并装依赖
+setup.cmd --force      :: 删掉旧环境重建
+setup.cmd --cuda-ocr   :: 额外装 OCR 的 CUDA 运行库（约 1.5GB，默认不装）
+serve.cmd              :: 启动服务（0.0.0.0:8080）
+serve.cmd --port 9000 --ocr-device gpu
+```
+
+已验证环境：
+
+| 组件 | 版本 | 来源 |
+| --- | --- | --- |
+| conda | 26.7.1 | Miniconda3 → `C:\Users\<你>\miniconda3` |
+| python | 3.11 | conda |
+| torch | 2.11.0+cu128 | `download.pytorch.org/whl/cu128`（直连约 23MB/s，比走代理快） |
+| ultralytics | 8.4.176 | PyPI 清华镜像 |
+| onnxruntime | 1.26.0（仅 `--cuda-ocr` 时） | PyPI 清华镜像 |
+
+### 设备分工：YOLO 上 GPU，OCR 走 CPU
+
+这不是偷懒，是实测结论。GTX 1660（6GB / sm_75）上同一张截图放大 2 倍：
+
+| | GPU | CPU | |
+| --- | --- | --- | --- |
+| YOLO 稳态推理 | **40–53 ms** | ~280 ms | GPU 快约 6x |
+| RapidOCR（PP-OCRv4 三件套） | 4.74 s | **2.40 s** | **CPU 快 2x** |
+
+OCR 慢的原因是模型太小：det/cls/rec 都只有几十 MB，GPU 算得动的部分本来就没多少，
+收益全被主机↔显存搬运和 cuDNN 首次 autotune 吃掉。想看自己机器上的实数：
+
+```cmd
+.conda\envs\yolo26\python.exe tools\check_gpu.py --bench
+```
+
+### 两个踩过的坑（都在脚本里修掉了）
+
+1. **`onnxruntime-gpu` 必须钉 `1.26.0`**。PyPI 上从 1.27 起默认对着 **CUDA 13** 编译，
+   而 `nvidia-cublas-cu13` / `nvidia-cudart-cu13` 等**没有 Windows 轮子**——
+   CUDA EP 加载失败后 ORT 会**静默**回退 CPU，接口全绿但一点没加速。1.26.0 对着 CUDA 12.8 编。
+2. **`ort.get_available_providers()` 会骗人**。它只报「编译进来哪些 provider」，
+   不代表能真加载。`tools/check_gpu.py` 因此直接解析 `onnxruntime_providers_cuda.dll`
+   的 PE 导入表，逐个核对 `cublas64_12` / `cudnn64_9` 这些依赖在不在，给出可证伪的结论。
+
+（另：cuDNN 也不能随便用最新版。9.27 的前端引擎启发式在 sm_75 上会
+`HEURISTIC_QUERY_FAILED`，conv 节点逐个回退 CPU；`--cuda-ocr` 会装 9.14 一路的版本。）
+
 ## 目录约定
 
 已通过 `yolo settings` 把输出重定向到项目内，训练产物不会散落到 home 目录：
